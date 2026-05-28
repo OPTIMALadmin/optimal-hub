@@ -1,0 +1,1826 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PO Approval Tool — OPTIMAL</title>
+<script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/pdf-lib@1.17.1/dist/pdf-lib.min.js"></script>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;600;700&display=swap');
+*{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#0f1117;--surface:#181c24;--surface2:#1e2330;--surface3:#252b38;--border:#2a3040;--border2:#3a4255;
+  --text:#e0e6f0;--text2:#8a95a8;--text3:#4a5568;
+  --cyan:#00d4aa;--cyan-dim:rgba(0,212,170,0.12);--cyan-border:rgba(0,212,170,0.3);
+  --green:#39d353;--green-dim:rgba(57,211,83,0.1);--green-border:rgba(57,211,83,0.3);
+  --amber:#f5a623;--amber-dim:rgba(245,166,35,0.1);--amber-border:rgba(245,166,35,0.3);
+  --red:#e05252;--red-dim:rgba(224,82,82,0.1);--red-border:rgba(224,82,82,0.3);
+  --blue:#4a9eff;--blue-dim:rgba(74,158,255,0.1);--blue-border:rgba(74,158,255,0.3);
+  --radius:4px;--radius-lg:6px;
+  --shadow-lg:0 8px 32px rgba(0,0,0,0.5);
+  --font:'JetBrains Mono',monospace;
+}
+body{font-family:var(--font);background:var(--bg);color:var(--text);font-size:13px;min-height:100vh;line-height:1.5}
+.app{display:flex;min-height:100vh;flex-direction:column}
+
+/* Top header bar */
+.topbar{height:70px;background:var(--surface);border-bottom:1px solid var(--border);display:flex;align-items:center;padding:0 24px;gap:20px;position:fixed;top:0;left:0;right:0;z-index:200;flex-shrink:0}
+.topbar-title{font-size:15px;font-weight:700;letter-spacing:0.05em;text-transform:uppercase;color:var(--text)}
+.topbar-title span{color:var(--cyan)}
+.topbar-sep{width:1px;height:24px;background:var(--border);flex-shrink:0}
+.topbar-user{font-size:11px;color:var(--text2);letter-spacing:0.05em}
+.topbar-user strong{color:var(--cyan);font-weight:500}
+.topbar-right{margin-left:auto;display:flex;align-items:center;gap:16px}
+.topbar-logo{display:flex;align-items:center;gap:10px}
+.topbar-builddate{font-size:10px;color:var(--text3);letter-spacing:0.08em}
+
+/* Optimal Group logo SVG inline */
+.optimal-logo{height:32px;width:auto;opacity:0.85}
+
+/* Layout below topbar */
+.app-body{display:flex;margin-top:70px;min-height:calc(100vh - 70px)}
+
+/* Sidebar */
+.sidebar{width:220px;background:var(--surface);border-right:1px solid var(--border);display:flex;flex-direction:column;flex-shrink:0;position:fixed;height:calc(100vh - 70px);top:70px;left:0;z-index:100;overflow-y:auto}
+.sidebar-user{padding:16px 18px;border-bottom:1px solid var(--border)}
+.sidebar-user .name{font-size:12px;font-weight:600;color:var(--text);text-transform:uppercase;letter-spacing:0.06em}
+.sidebar-user .role{font-size:10px;color:var(--cyan);margin-top:3px;letter-spacing:0.06em}
+nav{flex:1;padding:8px 0}
+nav a{display:flex;align-items:center;gap:10px;padding:9px 18px;color:var(--text2);text-decoration:none;font-size:11px;cursor:pointer;transition:all 0.12s;border:none;background:none;width:100%;text-align:left;font-family:var(--font);letter-spacing:0.06em;text-transform:uppercase;border-left:2px solid transparent}
+nav a:hover{background:var(--surface2);color:var(--text);border-left-color:var(--border2)}
+nav a.active{background:var(--cyan-dim);color:var(--cyan);border-left-color:var(--cyan)}
+nav a svg{width:14px;height:14px;flex-shrink:0}
+.nav-section{padding:14px 18px 4px;font-size:9px;text-transform:uppercase;letter-spacing:1px;color:var(--text3);margin-top:4px}
+.sidebar-footer{padding:14px 18px;border-top:1px solid var(--border)}
+.logout-btn{background:transparent;border:1px solid var(--border);color:var(--text2);padding:8px 12px;border-radius:var(--radius);cursor:pointer;font-size:10px;font-family:var(--font);width:100%;text-align:left;transition:all 0.12s;display:flex;align-items:center;gap:8px;letter-spacing:0.06em;text-transform:uppercase}
+.logout-btn:hover{border-color:var(--red-border);color:var(--red);background:var(--red-dim)}
+
+/* Main content */
+.main{margin-left:220px;flex:1;padding:28px 32px;min-height:calc(100vh - 70px);max-width:calc(100vw - 220px)}
+.page-header{margin-bottom:24px;padding-bottom:16px;border-bottom:1px solid var(--border)}
+.page-header h2{font-size:14px;font-weight:700;letter-spacing:0.1em;text-transform:uppercase;color:var(--text)}
+.page-header h2 span{color:var(--cyan)}
+.page-header p{color:var(--text2);margin-top:4px;font-size:11px;letter-spacing:0.04em}
+
+/* Login */
+.login-page{display:flex;align-items:center;justify-content:center;min-height:100vh;background:var(--bg);flex-direction:column;gap:0}
+.login-topbar{width:100%;background:var(--surface);border-bottom:1px solid var(--border);padding:14px 32px;display:flex;align-items:center;justify-content:space-between;position:fixed;top:0;left:0}
+.login-topbar-left{font-size:14px;font-weight:700;letter-spacing:0.1em;text-transform:uppercase;color:var(--text)}
+.login-topbar-left span{color:var(--cyan)}
+.login-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);padding:36px;width:380px;margin-top:56px}
+.login-logo-wrap{text-align:center;margin-bottom:28px;padding-bottom:20px;border-bottom:1px solid var(--border)}
+.login-logo-wrap h1{font-size:12px;font-weight:600;color:var(--text2);margin-top:14px;letter-spacing:0.12em;text-transform:uppercase}
+
+/* Forms */
+.form-group{margin-bottom:16px}
+label{display:block;font-size:10px;font-weight:600;color:var(--text2);margin-bottom:6px;text-transform:uppercase;letter-spacing:0.08em}
+input[type=text],input[type=password],input[type=email],input[type=number],select,textarea{width:100%;padding:9px 12px;border:1px solid var(--border);border-radius:var(--radius);font-family:var(--font);font-size:12px;background:var(--surface2);color:var(--text);transition:border-color 0.12s;outline:none}
+input:focus,select:focus,textarea:focus{border-color:var(--cyan);box-shadow:0 0 0 2px var(--cyan-dim)}
+select option{background:var(--surface2)}
+textarea{resize:vertical;min-height:80px;line-height:1.5}
+input[type=checkbox]{width:auto;margin-right:4px;accent-color:var(--cyan)}
+
+/* Buttons */
+.btn{display:inline-flex;align-items:center;gap:6px;padding:8px 16px;border-radius:var(--radius);border:1px solid var(--border);font-family:var(--font);font-size:11px;font-weight:600;cursor:pointer;transition:all 0.12s;text-decoration:none;text-transform:uppercase;letter-spacing:0.06em}
+.btn svg{width:13px;height:13px;flex-shrink:0}
+.btn-primary{background:var(--cyan);color:#0f1117;border-color:var(--cyan)}.btn-primary:hover{background:#00bfa0}
+.btn-success{background:var(--green-dim);color:var(--green);border-color:var(--green-border)}.btn-success:hover{background:var(--green);color:#0f1117}
+.btn-danger{background:var(--red-dim);color:var(--red);border-color:var(--red-border)}.btn-danger:hover{background:var(--red);color:#fff}
+.btn-outline{background:transparent;border-color:var(--border);color:var(--text2)}.btn-outline:hover{border-color:var(--border2);color:var(--text);background:var(--surface2)}
+.btn-blue{background:var(--blue-dim);color:var(--blue);border-color:var(--blue-border)}.btn-blue:hover{background:var(--blue);color:#fff}
+.btn-sm{padding:5px 10px;font-size:10px}
+.btn:disabled{opacity:0.3;cursor:not-allowed}
+.btn-group{display:flex;gap:8px;flex-wrap:wrap}
+
+/* Cards */
+.card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);padding:20px}
+
+/* Stats */
+.stats-row{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:24px}
+.stat-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:16px}
+.stat-card .label{font-size:9px;color:var(--text3);text-transform:uppercase;letter-spacing:0.1em;margin-bottom:8px;font-weight:600}
+.stat-card .value{font-size:28px;font-weight:700;letter-spacing:-0.02em;color:var(--text)}
+
+/* Tables */
+.table-wrap{overflow-x:auto}
+table{width:100%;border-collapse:collapse;font-size:11px}
+th{text-align:left;padding:9px 12px;border-bottom:1px solid var(--border);font-size:9px;text-transform:uppercase;letter-spacing:0.1em;color:var(--text3);font-weight:600;white-space:nowrap;background:var(--surface2)}
+td{padding:10px 12px;border-bottom:1px solid var(--border);vertical-align:middle;color:var(--text)}
+tr:last-child td{border-bottom:none}
+tbody tr:hover td{background:var(--surface2)}
+
+/* Badges */
+.badge{display:inline-flex;align-items:center;padding:2px 8px;border-radius:2px;font-size:10px;font-weight:600;white-space:nowrap;text-transform:uppercase;letter-spacing:0.06em;border:1px solid}
+.badge-blue{background:var(--blue-dim);color:var(--blue);border-color:var(--blue-border)}
+.badge-green{background:var(--green-dim);color:var(--green);border-color:var(--green-border)}
+.badge-amber{background:var(--amber-dim);color:var(--amber);border-color:var(--amber-border)}
+.badge-red{background:var(--red-dim);color:var(--red);border-color:var(--red-border)}
+.badge-gray{background:var(--surface3);color:var(--text2);border-color:var(--border)}
+.badge-cyan{background:var(--cyan-dim);color:var(--cyan);border-color:var(--cyan-border)}
+
+/* PO Detail */
+.po-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.po-field{background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius);padding:10px 12px}
+.po-field .key{font-size:9px;color:var(--text3);margin-bottom:4px;font-weight:600;text-transform:uppercase;letter-spacing:0.1em}
+.po-field .val{font-size:13px;font-weight:500;word-break:break-word;color:var(--text)}
+.section-title{font-size:9px;text-transform:uppercase;letter-spacing:0.12em;color:var(--cyan);margin-bottom:12px;font-weight:700;display:flex;align-items:center;gap:8px}
+.section-title::after{content:'';flex:1;height:1px;background:var(--border)}
+
+/* Approval level cards */
+.level-cards{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin:12px 0}
+.level-card{border:1px solid var(--border);border-radius:var(--radius);padding:14px;opacity:0.3;transition:all 0.2s;background:var(--surface2)}
+.level-card.active{opacity:1;border-color:var(--cyan-border);background:var(--cyan-dim);box-shadow:0 0 12px var(--cyan-dim)}
+.level-card.approved{opacity:1;border-color:var(--green-border);background:var(--green-dim)}
+.level-card.rejected{opacity:1;border-color:var(--red-border);background:var(--red-dim)}
+.level-card h4{font-size:11px;font-weight:700;margin-bottom:3px;text-transform:uppercase;letter-spacing:0.06em}
+.level-card p{font-size:10px;color:var(--text2)}
+.level-card .status-label{margin-top:8px;font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:0.1em;color:var(--cyan)}
+
+/* Alerts */
+.alert{padding:11px 14px;border-radius:var(--radius);font-size:11px;margin-bottom:16px;line-height:1.6;border:1px solid}
+.alert-success{background:var(--green-dim);color:var(--green);border-color:var(--green-border)}
+.alert-error{background:var(--red-dim);color:var(--red);border-color:var(--red-border)}
+.alert-info{background:var(--blue-dim);color:var(--blue);border-color:var(--blue-border)}
+.alert-warning{background:var(--amber-dim);color:var(--amber);border-color:var(--amber-border)}
+
+/* Approval stamp */
+.approval-stamp{position:relative;overflow:hidden;border:1px solid var(--green-border);background:var(--green-dim);border-radius:var(--radius);padding:18px;margin-bottom:16px}
+.approval-stamp .stamp-text{position:absolute;right:-10px;top:50%;transform:translateY(-50%) rotate(-12deg);font-size:48px;font-weight:900;color:rgba(57,211,83,0.08);white-space:nowrap;pointer-events:none;letter-spacing:6px;text-transform:uppercase}
+
+/* Timeline */
+.timeline{padding:0}
+.timeline-item{display:flex;gap:12px;padding:12px 0;border-bottom:1px solid var(--border)}
+.timeline-item:last-child{border-bottom:none}
+.timeline-dot{width:28px;height:28px;border-radius:2px;display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:13px;border:1px solid var(--border);background:var(--surface2)}
+.timeline-body .who{font-size:11px;font-weight:600;color:var(--text);text-transform:uppercase;letter-spacing:0.04em}
+.timeline-body .when{font-size:10px;color:var(--text3);margin-top:2px;font-family:var(--font)}
+.timeline-body .what{font-size:11px;color:var(--text2);margin-top:4px;line-height:1.5}
+
+/* Modal */
+.modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,0.7);display:flex;align-items:center;justify-content:center;z-index:999;padding:20px}
+.modal{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);padding:28px;width:480px;max-width:100%;box-shadow:var(--shadow-lg)}
+.modal h3{font-size:13px;font-weight:700;margin-bottom:8px;text-transform:uppercase;letter-spacing:0.08em;color:var(--cyan)}
+.modal .modal-desc{color:var(--text2);font-size:11px;margin-bottom:16px;line-height:1.7}
+.modal-actions{display:flex;gap:8px;justify-content:flex-end;margin-top:18px}
+
+/* Upload page */
+.upload-options{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.upload-option{border:1px solid var(--border);border-radius:var(--radius-lg);padding:24px;cursor:pointer;transition:all 0.15s;background:var(--surface)}
+.upload-option:hover{border-color:var(--cyan-border);background:var(--cyan-dim)}
+.upload-option .opt-icon{font-size:32px;margin-bottom:12px}
+.upload-option h3{font-size:12px;font-weight:700;margin-bottom:8px;text-transform:uppercase;letter-spacing:0.08em;color:var(--cyan)}
+.upload-option p{font-size:11px;color:var(--text2);line-height:1.7;margin-bottom:14px}
+.upload-option .steps{border-top:1px solid var(--border);padding-top:12px;display:flex;flex-direction:column;gap:7px}
+.upload-option .step{display:flex;align-items:flex-start;gap:8px}
+.step-num{width:16px;height:16px;border-radius:2px;background:var(--cyan);color:#0f1117;font-size:9px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0;margin-top:1px}
+.step-text{font-size:11px;color:var(--text2);line-height:1.5}
+
+/* PDF import banner */
+.pdf-ready-banner{background:var(--green-dim);border:1px solid var(--green-border);border-radius:var(--radius-lg);padding:16px 20px;display:flex;align-items:center;gap:14px;margin-bottom:18px}
+.pdf-ready-banner .pdf-icon{font-size:28px;flex-shrink:0}
+.pdf-ready-banner h3{font-size:12px;font-weight:700;color:var(--green);margin-bottom:2px;text-transform:uppercase;letter-spacing:0.06em}
+.pdf-ready-banner p{font-size:11px;color:var(--text2)}
+
+/* Review form */
+.review-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:18px}
+.level-indicator{border-radius:var(--radius);padding:11px 14px;display:flex;align-items:center;gap:10px;margin-bottom:18px;background:var(--surface2);border:1px solid var(--border)}
+
+/* Items editor */
+.items-header-row{display:grid;grid-template-columns:1fr 70px 100px 100px 32px;gap:8px;margin-bottom:5px;padding:0 2px}
+.items-header-row span{font-size:9px;color:var(--text3);text-transform:uppercase;letter-spacing:0.1em;font-weight:600}
+.item-row{display:grid;grid-template-columns:1fr 70px 100px 100px 32px;gap:8px;align-items:center;margin-bottom:7px}
+.item-row input{padding:7px 9px;font-size:11px}
+.del-btn{background:var(--red-dim);border:1px solid var(--red-border);color:var(--red);border-radius:var(--radius);cursor:pointer;font-size:16px;display:flex;align-items:center;justify-content:center;height:32px;width:32px;flex-shrink:0;font-weight:400;line-height:1;padding:0}
+.del-btn:hover{background:var(--red);color:#fff}
+
+/* User management */
+.user-row{display:flex;align-items:center;gap:12px;padding:14px 0;border-bottom:1px solid var(--border);flex-wrap:wrap}
+.user-row:last-child{border-bottom:none}
+.user-avatar{width:34px;height:34px;border-radius:var(--radius);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;flex-shrink:0;border:1px solid var(--border)}
+.user-info{flex:1;min-width:160px}
+.user-info .uname{font-size:12px;font-weight:600;color:var(--text);text-transform:uppercase;letter-spacing:0.04em}
+.user-info .uemail{font-size:10px;color:var(--text3);margin-top:2px}
+
+/* Parameters */
+.param-card{border-radius:var(--radius);padding:18px;border:1px solid}
+.param-card h3{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.1em;margin-bottom:6px}
+.param-card .amount{font-size:20px;font-weight:700;margin-bottom:4px;color:var(--text)}
+.param-card .desc{font-size:10px;color:var(--text2);margin-bottom:12px;letter-spacing:0.04em}
+.approver-chip{font-size:10px;background:var(--surface3);padding:2px 8px;border-radius:2px;display:inline-block;margin:2px;color:var(--text2);border:1px solid var(--border);font-family:var(--font)}
+
+/* Toast */
+#toast{position:fixed;top:70px;right:20px;z-index:9999;pointer-events:none}
+.toast-item{background:var(--surface);border:1px solid var(--border);color:var(--text);padding:10px 16px;border-radius:var(--radius);font-size:11px;margin-bottom:7px;box-shadow:var(--shadow-lg);animation:slideIn 0.15s ease;max-width:300px;line-height:1.5;font-family:var(--font);letter-spacing:0.03em}
+.toast-item.success{border-color:var(--green-border);color:var(--green);background:var(--green-dim)}
+.toast-item.error{border-color:var(--red-border);color:var(--red);background:var(--red-dim)}
+@keyframes slideIn{from{transform:translateX(110%);opacity:0}to{transform:translateX(0);opacity:1}}
+@keyframes slideOut{from{opacity:1}to{opacity:0;transform:translateX(110%)}}
+
+/* Scrollbar */
+::-webkit-scrollbar{width:4px;height:4px}
+::-webkit-scrollbar-track{background:var(--bg)}
+::-webkit-scrollbar-thumb{background:var(--border2);border-radius:2px}
+
+@media(max-width:900px){
+  .sidebar{width:190px}.main{margin-left:190px;padding:20px}
+  .stats-row{grid-template-columns:repeat(2,1fr)}
+  .po-grid,.review-grid{grid-template-columns:1fr}
+  .upload-options,.level-cards{grid-template-columns:1fr}
+}
+</style>
+</head>
+<body>
+
+<div id="toast"></div>
+<div id="root"></div>
+<script>
+// ============================================================
+// DATA & STATE
+// ============================================================
+const INITIAL_USERS = [
+  { id:'admin',  login:'admin',           pass:'adminOPTIMAL',           name:'Administrator',   email:'POApproval@optimal.pt',         role:'admin', levels:[] },
+  { id:'u1',     login:'antonio.reis',    pass:'antonio.reisOPTIMAL',    name:'António Reis',    email:'antonio.reis@optimal.pt',        role:'user',  levels:[1,2,3] },
+  { id:'u2',     login:'manuel.torres',   pass:'manuel.torresOPTIMAL',   name:'Manuel Torres',   email:'manuel.torrestest@optimal.pt',   role:'user',  levels:[1,2,3] },
+  { id:'u3',     login:'jorge.subtil',    pass:'jorge.subtilOPTIMAL',    name:'Jorge Subtil',    email:'jorge.subtiltest@optimal.pt',    role:'user',  levels:[1] },
+  { id:'u4',     login:'celeste.pereira', pass:'celeste.pereiraOPTIMAL', name:'Celeste Pereira', email:'celeste.pereiratest@optimal.pt', role:'user',  levels:[1,2] },
+  { id:'u5',     login:'mauro.lopes',     pass:'mauro.lopesOPTIMAL',     name:'Mauro Lopes',     email:'mauro.lopestest@optimal.pt',     role:'user',  levels:[] },
+  { id:'u6',     login:'bruno.carvalho', pass:'bruno.carvalhoASC',       name:'Bruno Carvalho',  email:'bruno.carvalhotest@optimal.pt',  role:'user',  levels:[] },
+  { id:'u7',     login:'ivo.costa',      pass:'ivo.costaOPTIMAL',        name:'Ivo Costa',       email:'ivo.costatest@optimal.pt',       role:'user',  levels:[] },
+  { id:'u8',     login:'joao.ferreira',  pass:'joao.ferreiraOPTIMAL',    name:'João Ferreira',   email:'joao.ferreiratest@optimal.pt',   role:'user',  levels:[] },
+  { id:'u9',     login:'joao.pinto',     pass:'joao.pintoOPTIMAL',       name:'João Pinto',      email:'joao.pintotest@optimal.pt',      role:'user',  levels:[] },
+];
+
+// ── Approval level thresholds ────────────────────────────────────────────────
+const APPROVAL_LEVELS = [
+  { level:1, label:'Level 1', min:0,     max:750,    desc:'€0 – €750' },
+  { level:2, label:'Level 2', min:751,   max:10000,  desc:'€751 – €10,000' },
+  { level:3, label:'Level 3', min:10001, max:200000, desc:'€10,001 – €200,000' },
+];
+
+// ── Company list ─────────────────────────────────────────────────────────────
+const COMPANIES = [
+  'OPTIMAL GROUP',
+  'OPTIMAL STRUCTURAL SOLUTIONS',
+  'OPTIMAL SPACE',
+  'OPTIMAL HIGH VOLUME',
+  'OPTIMAL MARINE',
+  'ATLANTIC SPACEPORT CONSORTIUM',
+];
+
+// ── Per-company approval matrix ───────────────────────────────────────────────
+// Structure: company -> level -> array of "approver groups"
+// Each group is an array of logins; ALL logins in a group must approve (joint approval)
+// Multiple groups = ANY single group can satisfy the requirement
+const APPROVAL_MATRIX = {
+  'OPTIMAL GROUP': {
+    1: [['jorge.subtil'], ['antonio.reis'], ['manuel.torres']],
+    2: [['antonio.reis'], ['manuel.torres']],
+    3: [['antonio.reis','manuel.torres']],
+  },
+  'OPTIMAL STRUCTURAL SOLUTIONS': {
+    1: [['jorge.subtil'], ['antonio.reis'], ['manuel.torres']],
+    2: [['antonio.reis'], ['manuel.torres']],
+    3: [['antonio.reis','manuel.torres']],
+  },
+  'OPTIMAL SPACE': {
+    1: [['ivo.costa'], ['celeste.pereira'], ['antonio.reis'], ['manuel.torres']],
+    2: [['celeste.pereira'], ['antonio.reis'], ['manuel.torres']],
+    3: [['celeste.pereira','antonio.reis','manuel.torres']],
+  },
+  'OPTIMAL HIGH VOLUME': {
+    1: [['jorge.subtil'], ['joao.pinto'], ['antonio.reis'], ['manuel.torres']],
+    2: [['antonio.reis'], ['manuel.torres']],
+    3: [['antonio.reis','manuel.torres']],
+  },
+  'OPTIMAL MARINE': {
+    1: [['jorge.subtil'], ['antonio.reis'], ['manuel.torres']],
+    2: [['joao.pinto'], ['antonio.reis'], ['manuel.torres']],
+    3: [['joao.pinto','antonio.reis','manuel.torres']],
+  },
+  'ATLANTIC SPACEPORT CONSORTIUM': {
+    1: [['bruno.carvalho','antonio.reis','manuel.torres']],
+    2: [['bruno.carvalho','antonio.reis','manuel.torres']],
+    3: [['bruno.carvalho','antonio.reis','manuel.torres']],
+  },
+};
+
+let state = {
+  loggedIn: false,
+  currentUser: null,
+  page: 'dashboard',
+  users: [],
+  pos: [],
+  archive: [],
+  modal: null,
+  currentPO: null,
+  reviewData: null,
+  reviewItems: [],
+  reviewSource: null,
+  reviewPdfB64: null,
+  reviewPdfName: null,
+  apiKey: '',
+};
+
+// ---- Persistence (localStorage) ----
+function loadState() {
+  try {
+    const s = JSON.parse(localStorage.getItem('po_tool_optimal') || '{}');
+    state.users   = s.users   || JSON.parse(JSON.stringify(INITIAL_USERS));
+    state.pos     = s.pos     || [];
+    state.archive = s.archive || [];
+    state.apiKey  = localStorage.getItem('po_tool_apikey') || '';
+
+    // Migration: add any new users from INITIAL_USERS that don't exist in saved state
+    INITIAL_USERS.forEach(iu => {
+      if (!state.users.find(u => u.id === iu.id || u.login === iu.login)) {
+        state.users.push({...iu});
+      }
+    });
+
+  } catch(e) {
+    state.users = JSON.parse(JSON.stringify(INITIAL_USERS));
+    state.pos = []; state.archive = [];
+  }
+}
+function saveState() {
+  try {
+    localStorage.setItem('po_tool_optimal', JSON.stringify({users:state.users,pos:state.pos,archive:state.archive}));
+    if (state.apiKey) localStorage.setItem('po_tool_apikey', state.apiKey);
+  } catch(e) {}
+}
+loadState();
+
+// ---- Helpers ----
+function getLevel(amount) {
+  if (amount <= 750)   return 1;
+  if (amount <= 10000) return 2;
+  return 3;
+}
+
+// Get the approval groups for a given company + level
+// Returns array of groups; each group = array of logins (ALL must approve)
+function normaliseCompany(name) {
+  return String(name||'')
+    .toUpperCase()
+    .trim()
+    // Strip common legal suffixes
+    .replace(/\b(LDA\.?|SA\.?|S\.A\.?|LTD\.?|LLC\.?|INC\.?|PLC\.?|GMBH\.?|SRL\.?|SL\.?|BV\.?|NV\.?)\s*$/,'')
+    .trim();
+}
+
+function getApprovalGroups(company, level) {
+  if (!company || !level) return [];
+  const normInput = normaliseCompany(company);
+  // 1. Exact match after normalisation
+  let key = Object.keys(APPROVAL_MATRIX).find(k => normaliseCompany(k) === normInput);
+  // 2. Input starts with matrix key (e.g. "OPTIMAL STRUCTURAL SOLUTIONS LDA" starts with "OPTIMAL STRUCTURAL SOLUTIONS")
+  if (!key) key = Object.keys(APPROVAL_MATRIX).find(k => normInput.startsWith(normaliseCompany(k)));
+  // 3. Matrix key starts with input
+  if (!key) key = Object.keys(APPROVAL_MATRIX).find(k => normaliseCompany(k).startsWith(normInput));
+  if (!key) {
+    console.warn('[Approval] No matrix entry for company:', company, '(normalised:', normInput+')');
+    return [];
+  }
+  return APPROVAL_MATRIX[key][Number(level)] || [];
+}
+
+// Get all unique logins that are relevant approvers for a company+level
+// (used to send notification emails)
+function getApproverLogins(company, level) {
+  const groups = getApprovalGroups(company, level);
+  const logins = new Set();
+  groups.forEach(g => g.forEach(l => logins.add(l)));
+  return [...logins];
+}
+
+// Resolve logins to user objects
+function getUsersByLogins(logins) {
+  return logins.map(l => state.users.find(u => u.login === l)).filter(Boolean);
+}
+
+// Check if current user can approve this PO
+// User can approve if they are in ANY approver group for this company+level
+function canUserApprove(user, po) {
+  if (user.role === 'admin') return true;
+  const groups = getApprovalGroups(po.company, po.approvalLevel);
+  return groups.some(group => group.includes(user.login));
+}
+
+// Check if approval is complete:
+// A group is "satisfied" when all its members have approved
+// PO is fully approved when ANY group is satisfied
+function isApprovalComplete(po) {
+  const groups = getApprovalGroups(po.company, po.approvalLevel);
+  if (!groups.length) return false;
+  const approvedBy = po.approvals || []; // array of logins who have approved
+  return groups.some(group => group.every(login => approvedBy.includes(login)));
+}
+
+// Get which groups are still pending and which are satisfied
+function getApprovalStatus(po) {
+  const groups = getApprovalGroups(po.company, po.approvalLevel);
+  const approvedBy = po.approvals || [];
+  return groups.map(group => ({
+    group,
+    satisfied: group.every(l => approvedBy.includes(l)),
+    pending:   group.filter(l => !approvedBy.includes(l)),
+    done:      group.filter(l =>  approvedBy.includes(l)),
+  }));
+}
+
+// Count POs pending current user's action
+function pendingCount() {
+  const u = state.currentUser; if (!u) return 0;
+  return state.pos.filter(p => {
+    if (p.status !== 'pending') return false;
+    if (u.role === 'admin') return true;
+    const groups = getApprovalGroups(p.company, p.approvalLevel);
+    // User is relevant if they are in any group AND haven't approved yet
+    const approvedBy = p.approvals || [];
+    return groups.some(g => g.includes(u.login) && !approvedBy.includes(u.login));
+  }).length;
+}
+function fmtCurrency(amount, cur) { const sym=cur==='EUR'?'€':cur==='USD'?'$':cur==='GBP'?'£':cur+' '; return sym+(Number(amount)||0).toLocaleString('en',{minimumFractionDigits:2,maximumFractionDigits:2}); }
+function fmtDate(iso) { if(!iso)return'—'; return new Date(iso).toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'numeric'}); }
+function fmtDateTime(iso) { if(!iso)return'—'; return new Date(iso).toLocaleString('en-GB',{day:'2-digit',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'}); }
+function uid() { return Date.now().toString(36)+Math.random().toString(36).slice(2); }
+function esc(s) { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+
+function addEvent(type, poId, userId, message) {
+  state.archive.unshift({ id:uid(), type, poId, userId, userName:state.users.find(u=>u.id===userId)?.name||userId, message, ts:new Date().toISOString() });
+  saveState();
+}
+// ---- EmailJS config ----
+const EMAILJS_SERVICE_ID  = 'service_jypdkrp';
+const EMAILJS_TEMPLATE_ID = 'template_uge12ij';
+const EMAILJS_PUBLIC_KEY  = 'wtS4KdSX8P9ihISpT';
+emailjs.init(EMAILJS_PUBLIC_KEY);
+
+async function sendEmail(to, subject, message, poId) {
+  state.archive.unshift({ id:uid(), type:'email', to, subject, poId, ts:new Date().toISOString() });
+  saveState();
+  try {
+    const response = await emailjs.send(
+      EMAILJS_SERVICE_ID,
+      EMAILJS_TEMPLATE_ID,
+      { to_email: to, subject: subject, message: message }
+    );
+    console.log('[EmailJS] Sent to', to, response.status, response.text);
+  } catch(err) {
+    console.error('[EmailJS] Failed:', err);
+    toast(`Email failed: ${err?.text || err?.message || JSON.stringify(err)}`, 'error', 6000);
+  }
+}
+
+
+// ---- Toast ----
+function toast(msg, type='success', duration=4000) {
+  const t = document.createElement('div');
+  t.className = 'toast-item '+type;
+  t.textContent = msg;
+  document.getElementById('toast').appendChild(t);
+  setTimeout(()=>{ t.style.animation='slideOut 0.2s ease forwards'; setTimeout(()=>t.remove(), 200); }, duration);
+}
+
+// ============================================================
+// RENDER ENGINE
+// ============================================================
+function render() {
+  const root = document.getElementById('root');
+  root.innerHTML = '';
+  if (!state.loggedIn) { root.appendChild(renderLogin()); return; }
+  root.appendChild(renderApp());
+}
+
+// ============================================================
+// LOGIN
+// ============================================================
+function renderLogin() {
+  const BUILD_DATE = new Date().toLocaleDateString('en-GB',{day:'2-digit',month:'2-digit',year:'numeric'});
+  const page = document.createElement('div');
+  page.className = 'login-page';
+  page.innerHTML = `
+    <div class="login-topbar">
+      <div class="login-topbar-left"><span>PO</span> APPROVAL TOOL</div>
+      <div style="display:flex;align-items:center;gap:14px"><span style="font-size:10px;color:var(--text3);letter-spacing:0.08em">${BUILD_DATE}</span>
+      </div>
+    </div>
+    <div class="login-card">
+      <div class="login-logo-wrap">
+        <img src="data:image/png;base64,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" style="width:200px;height:auto;margin:0 auto 16px;display:block" alt="Optimal Group">
+        <h1>Purchase Order Approval</h1>
+      </div>
+      <div id="login-err"></div>
+      <div class="form-group"><label>Username</label><input type="text" id="lu" placeholder="enter login" autocomplete="username"></div>
+      <div class="form-group"><label>Password</label><input type="password" id="lp" placeholder="••••••••••••" autocomplete="current-password"></div>
+      <button class="btn btn-primary" style="width:100%;justify-content:center;padding:10px" onclick="doLogin()">Sign In →</button>
+    </div>`;
+  page.querySelector('#lp').addEventListener('keydown', e=>{ if(e.key==='Enter') doLogin(); });
+  setTimeout(()=>{ const i=document.getElementById('lu'); if(i)i.focus(); },50);
+  return page;
+}
+function doLogin() {
+  const login = document.getElementById('lu')?.value.trim();
+  const pass  = document.getElementById('lp')?.value;
+  const user  = state.users.find(u=>u.login===login&&u.pass===pass);
+  if (!user) { document.getElementById('login-err').innerHTML='<div class="alert alert-error">Invalid username or password.</div>'; return; }
+  state.loggedIn = true; state.currentUser = user; state.page = 'dashboard';
+  state.reviewData = null; state.reviewItems = []; state.modal = null;
+  render();
+}
+
+// ============================================================
+// APP SHELL
+// ============================================================
+
+
+function renderApp() {
+  const u = state.currentUser, isAdmin = u.role==='admin';
+  const BUILD_DATE = new Date().toLocaleDateString('en-GB',{day:'2-digit',month:'2-digit',year:'numeric'});
+  const wrap = document.createElement('div'); wrap.className = 'app';
+
+  // --- Top bar ---
+  const topbar = document.createElement('div'); topbar.className = 'topbar';
+  topbar.innerHTML = `
+    <div class="topbar-title"><span>PO</span> APPROVAL TOOL</div>
+    <div class="topbar-sep"></div>
+    <div class="topbar-user">Logged in as <strong>${esc(u.login)}</strong></div>
+    <div class="topbar-right">
+      <img src="data:image/png;base64,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" style="height:70px;width:auto;border-radius:4px" alt="Optimal Group">
+    </div>`;
+  wrap.appendChild(topbar);
+
+  // --- App body ---
+  const body = document.createElement('div'); body.className = 'app-body';
+
+  // --- Sidebar ---
+  const sb = document.createElement('div'); sb.className = 'sidebar';
+  sb.innerHTML = `
+    <div class="sidebar-user">
+      <div class="name">${esc(u.name)}</div>
+      <div class="role">${isAdmin?'Administrator':'Levels: '+(u.levels?.length?u.levels.map(l=>'L'+l).join(' / '):'None')}</div>
+    </div>
+    <nav>
+      <div class="nav-section">Navigation</div>
+      <a onclick="nav('dashboard')" class="${state.page==='dashboard'?'active':''}">${svgIcon('grid')} Dashboard</a>
+      <a onclick="nav('upload')" class="${state.page==='upload'||state.page==='review'?'active':''}">${svgIcon('upload')} New PO</a>
+      <a onclick="nav('pos')" class="${state.page==='pos'?'active':''}">${svgIcon('file')} My POs</a>
+      <a onclick="nav('pending')" class="${state.page==='pending'?'active':''}">
+        ${svgIcon('clock')} Pending
+        ${pendingCount()?`<span style="margin-left:auto;background:var(--amber);color:#0f1117;border-radius:2px;padding:0 5px;font-size:9px;font-weight:700">${pendingCount()}</span>`:''}
+      </a>
+      <a onclick="nav('archive')" class="${state.page==='archive'?'active':''}">${svgIcon('archive')} Archive</a>
+      ${isAdmin?`<div class="nav-section">Admin</div>
+      <a onclick="nav('users')" class="${state.page==='users'?'active':''}">${svgIcon('users')} Users</a>
+      <a onclick="nav('parameters')" class="${state.page==='parameters'?'active':''}">${svgIcon('settings')} Parameters</a>
+      <a onclick="nav('apisettings')" class="${state.page==='apisettings'?'active':''}">${svgIcon('key')} API Key${!state.apiKey?' <span style="color:var(--amber);margin-left:4px">⚠</span>':''}</a>`:''}
+    </nav>
+    <div class="sidebar-footer"><button class="logout-btn" onclick="doLogout()">${svgIcon('logout')} Sign out</button></div>`;
+  body.appendChild(sb);
+
+  // --- Main content ---
+  const main = document.createElement('div'); main.className = 'main';
+  const pages = { dashboard:renderDashboard, upload:renderUpload, review:renderReviewForm, pos:renderPOList, pending:renderPending, 'po-detail':renderPODetail, archive:renderArchive, users:renderUsers, parameters:renderParameters, apisettings:renderApiSettings };
+  const pageFn = pages[state.page] || renderDashboard;
+  main.appendChild(pageFn());
+  body.appendChild(main);
+  wrap.appendChild(body);
+
+  // --- Modal ---
+  if (state.modal) wrap.appendChild(renderModal());
+
+  return wrap;
+}
+
+function nav(page) { state.page=page; state.modal=null; render(); }
+function doLogout() { state.loggedIn=false; state.currentUser=null; state.reviewData=null; state.modal=null; render(); }
+
+// ============================================================
+// DASHBOARD
+// ============================================================
+function renderDashboard() {
+  const u=state.currentUser, isAdmin=u.role==='admin';
+  const myPending = state.pos.filter(p => {
+    if (p.status !== 'pending') return false;
+    if (isAdmin) return true;
+    const groups = getApprovalGroups(p.company, p.approvalLevel);
+    const approvedBy = p.approvals || [];
+    return groups.some(g => g.includes(u.login) && !approvedBy.includes(u.login));
+  });
+  const div = document.createElement('div');
+
+  div.innerHTML = `
+    <div class="page-header">
+      <h2>Welcome back, ${esc(u.name.split(' ')[0])}</h2>
+      <p>${new Date().toLocaleDateString('en-GB',{weekday:'long',year:'numeric',month:'long',day:'numeric'})}</p>
+    </div>
+    <div class="stats-row">
+      <div class="stat-card"><div class="label">Total POs</div><div class="value">${state.pos.length}</div></div>
+      <div class="stat-card"><div class="label">Pending</div><div class="value" style="color:var(--amber)">${state.pos.filter(p=>p.status==='pending').length}</div></div>
+      <div class="stat-card"><div class="label">Approved</div><div class="value" style="color:var(--green)">${state.pos.filter(p=>p.status==='approved').length}</div></div>
+      <div class="stat-card"><div class="label">Awaiting Me</div><div class="value" style="color:var(--blue)">${myPending.length}</div></div>
+    </div>`;
+
+  if (myPending.length) {
+    const sec = document.createElement('div'); sec.style.marginBottom='28px';
+    sec.innerHTML = `<h3 style="font-size:14px;font-weight:700;margin-bottom:12px;color:var(--amber)">⏳ Awaiting your approval</h3>`;
+    const card = document.createElement('div'); card.className='card'; card.style.padding='0';
+    card.appendChild(buildPOTable(myPending));
+    sec.appendChild(card); div.appendChild(sec);
+  }
+
+  const recent = state.archive.filter(e=>e.type!=='email').slice(0,10);
+  const sec2 = document.createElement('div');
+  sec2.innerHTML = `<h3 style="font-size:14px;font-weight:700;margin-bottom:12px">Recent Activity</h3>`;
+  const card2 = document.createElement('div'); card2.className='card';
+  if (!recent.length) {
+    card2.innerHTML='<p style="color:var(--text3);text-align:center;padding:24px;font-size:13px">No activity yet. Create your first PO to get started.</p>';
+  } else {
+    const tl=document.createElement('div'); tl.className='timeline';
+    recent.forEach(ev=>tl.appendChild(buildTimelineItem(ev)));
+    card2.appendChild(tl);
+  }
+  sec2.appendChild(card2); div.appendChild(sec2);
+  return div;
+}
+
+// ============================================================
+// UPLOAD PAGE
+// ============================================================
+function renderUpload() {
+  const div = document.createElement('div');
+
+  if (state.reviewData) { div.appendChild(renderReviewForm()); return div; }
+
+  div.innerHTML = `<div class="page-header"><h2>New Purchase Order</h2><p>Choose how you'd like to add your PO to the system</p></div>`;
+
+  const opts = document.createElement('div'); opts.className='upload-options';
+
+  // Option A — PDF extraction
+  const optA = document.createElement('div'); optA.className='upload-option';
+  optA.innerHTML = `
+    <div class="opt-icon">📄</div>
+    <h3>Upload PDF</h3>
+    <p>Select a PDF file from your computer. Claude AI will automatically read it and extract all PO fields for your review.</p>
+    <div style="position:relative">
+      <input type="file" id="pdf-file-input" accept=".pdf,application/pdf" style="position:absolute;inset:0;opacity:0;cursor:pointer;width:100%;height:100%;z-index:2">
+      <button class="btn btn-blue" style="width:100%;justify-content:center;pointer-events:none">
+        ${svgIcon('upload')} Select PDF file
+      </button>
+    </div>
+    <p style="font-size:11px;color:var(--text3);margin-top:8px;text-align:center">PDF is read locally — your file never leaves your computer</p>
+    ${!state.apiKey ? `<div class="alert alert-warning" style="margin-top:12px;font-size:12px">⚠️ No API key set. <a onclick="nav('apisettings')" style="color:var(--amber);font-weight:600;cursor:pointer">Configure it here</a> before uploading a PDF.</div>` : ''}`;
+
+  // Option B — Manual
+  const optB = document.createElement('div'); optB.className='upload-option'; optB.style.cursor='pointer';
+  optB.innerHTML = `
+    <div class="opt-icon">✏️</div>
+    <h3>Fill in manually</h3>
+    <p>Enter PO information directly into a form. Add all fields and line items yourself.</p>
+    <div class="steps">
+      <div class="step"><div class="step-num">1</div><div class="step-text">Click to open the entry form</div></div>
+      <div class="step"><div class="step-num">2</div><div class="step-text">Fill in PO header fields and line items</div></div>
+      <div class="step"><div class="step-num">3</div><div class="step-text">Review and submit for approval</div></div>
+    </div>`;
+  optB.onclick = () => openManualForm();
+
+  opts.appendChild(optA); opts.appendChild(optB); div.appendChild(opts);
+
+  // Wire PDF input
+  setTimeout(()=>{
+    const inp = document.getElementById('pdf-file-input');
+    if (inp) inp.addEventListener('change', e=>{ if(e.target.files[0]) handlePDF(e.target.files[0]); });
+    // Drag & drop on optA
+    optA.addEventListener('dragover', e=>{ e.preventDefault(); optA.style.borderColor='var(--blue)'; optA.style.background='var(--blue-bg)'; });
+    optA.addEventListener('dragleave', ()=>{ optA.style.borderColor=''; optA.style.background=''; });
+    optA.addEventListener('drop', e=>{ e.preventDefault(); optA.style.borderColor=''; optA.style.background=''; const f=e.dataTransfer.files[0]; if(f&&f.type==='application/pdf')handlePDF(f); });
+  },30);
+
+  return div;
+}
+
+function handlePDF(file) {
+  const main = document.querySelector('.main');
+  const loadDiv = document.createElement('div');
+  loadDiv.id = 'pdf-loading';
+  loadDiv.innerHTML = `
+    <div class="page-header"><h2>Reading PDF…</h2><p>${esc(file.name)}</p></div>
+    <div class="card" style="text-align:center;padding:48px">
+      <div style="font-size:40px;margin-bottom:16px">⏳</div>
+      <h3 style="font-weight:600;margin-bottom:8px">Extracting PO data</h3>
+      <p style="color:var(--text2);font-size:13px">Claude AI is reading your PDF. This takes a few seconds…</p>
+    </div>`;
+  main.innerHTML = ''; main.appendChild(loadDiv);
+
+  const reader = new FileReader();
+  reader.onload = async (e) => {
+    const base64 = e.target.result.split(',')[1];
+    try {
+      const data = await extractWithClaude(base64, file.name);
+      state.reviewData = data;
+      state.reviewItems = (data.items||[]).map((it,i)=>({...it, _id:i}));
+      if (!state.reviewItems.length) state.reviewItems = [{_id:0,description:'',qty:1,unitPrice:0,total:0}];
+      state.reviewSource  = 'pdf';
+      state.reviewPdfB64  = base64;        // ← store original PDF
+      state.reviewPdfName = file.name;
+      state.page = 'upload';
+      render();
+    } catch(err) {
+      toast('PDF extraction failed: '+err.message+'. Please fill in manually.', 'error', 7000);
+      openManualForm();
+    }
+  };
+  reader.readAsDataURL(file);
+}
+
+async function extractWithClaude(base64, filename) {
+  const prompt = `Extract all fields from this Purchase Order PDF and return ONLY a valid JSON object — no markdown, no explanation.
+
+JSON structure:
+{
+  "company": "company issuing the PO",
+  "poNumber": "PO number",
+  "supplier": "supplier name",
+  "supplierAddress": "full supplier address",
+  "supplierNIF": "supplier NIF or VAT number",
+  "project": "project name or code",
+  "netTotal": <number>,
+  "total": <number, total including taxes>,
+  "currency": "3-letter code e.g. EUR",
+  "paymentTerms": "payment terms",
+  "items": [{"description":"...","qty":<number>,"unitPrice":<number>,"total":<number>}]
+}
+
+Use "" for missing strings, 0 for missing numbers. Return only the JSON.`;
+
+  if (!state.apiKey) throw new Error('No API key configured. Please go to Admin → API Key and enter your Anthropic API key.');
+
+  const resp = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: {
+      'Content-Type':'application/json',
+      'x-api-key': state.apiKey,
+      'anthropic-version': '2023-06-01',
+      'anthropic-dangerous-direct-browser-access':'true'
+    },
+    body: JSON.stringify({
+      model: 'claude-sonnet-4-5',
+      max_tokens: 2000,
+      messages: [{
+        role: 'user',
+        content: [
+          { type:'document', source:{ type:'base64', media_type:'application/pdf', data:base64 } },
+          { type:'text', text:prompt }
+        ]
+      }]
+    })
+  });
+
+  if (!resp.ok) {
+    const err = await resp.json().catch(()=>({}));
+    throw new Error(err.error?.message||`API error ${resp.status}`);
+  }
+  const result = await resp.json();
+  const text = result.content.map(c=>c.text||'').join('');
+  const clean = text.replace(/```json|```/g,'').trim();
+  return JSON.parse(clean);
+}
+
+function openManualForm() {
+  state.reviewData = { company:'',poNumber:'',supplier:'',supplierAddress:'',supplierNIF:'',project:'',netTotal:0,total:0,currency:'EUR',paymentTerms:'' };
+  state.reviewItems = [{ _id:0,description:'',qty:1,unitPrice:0,total:0 }];
+  state.reviewSource = 'manual';
+  state.page = 'upload';
+  render();
+}
+
+// ============================================================
+// REVIEW FORM
+// ============================================================
+function renderReviewForm() {
+  const ex = state.reviewData || {};
+  const isPDF = state.reviewSource === 'pdf';
+  const wrap = document.createElement('div');
+
+  // Header
+  const hdr = document.createElement('div');
+  hdr.style.cssText = 'display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:20px;gap:16px';
+  hdr.innerHTML = `
+    <div>
+      <h2 style="font-size:22px;font-weight:700;letter-spacing:-0.4px">${isPDF?'Review Extracted PO':'New Purchase Order'}</h2>
+      <p style="color:var(--text2);font-size:13px;margin-top:4px">${isPDF?'All fields were extracted from your PDF — verify and edit before creating':'Fill in all purchase order details below'}</p>
+    </div>
+    <button class="btn btn-outline btn-sm" onclick="state.reviewData=null;state.reviewItems=[];state.page='upload';render()">← Back</button>`;
+  wrap.appendChild(hdr);
+
+  if (isPDF) {
+    const banner = document.createElement('div'); banner.className='pdf-ready-banner';
+    banner.innerHTML=`<div class="pdf-icon">✅</div><div><h3>PDF extracted successfully</h3><p>All fields have been pre-filled. Please review carefully before confirming.</p></div>`;
+    wrap.appendChild(banner);
+  }
+
+  const card = document.createElement('div'); card.className='card';
+
+  // Fields grid
+  const grid = document.createElement('div'); grid.className='review-grid';
+  const fields = [
+    { id:'f-company',  label:'Company Issuing PO', val:ex.company||'',         placeholder:'', isCompanySelect:true },
+    { id:'f-ponum',    label:'PO Number',           val:ex.poNumber||'',        placeholder:'e.g. PO-2024-001' },
+    { id:'f-supplier', label:'Supplier Name',       val:ex.supplier||'',        placeholder:'Supplier company name' },
+    { id:'f-addr',     label:'Supplier Address',    val:ex.supplierAddress||'', placeholder:'Full address' },
+    { id:'f-nif',      label:'Supplier NIF / VAT',  val:ex.supplierNIF||'',     placeholder:'e.g. PT123456789' },
+    { id:'f-project',  label:'Project',             val:ex.project||'',         placeholder:'Project name or code' },
+    { id:'f-net',      label:'Net Total',           val:ex.netTotal||0,         type:'number', placeholder:'0.00' },
+    { id:'f-total',    label:'Total (incl. VAT)',   val:ex.total||0,            type:'number', placeholder:'0.00', bold:true },
+    { id:'f-currency', label:'Currency',            val:ex.currency||'EUR',     isSelect:true, options:['EUR','USD','GBP','CHF'] },
+    { id:'f-terms',    label:'Payment Terms',       val:ex.paymentTerms||'',    placeholder:'e.g. 30 days net' },
+  ];
+  fields.forEach(f=>{
+    const fg = document.createElement('div'); fg.className='form-group'; fg.style.marginBottom='0';
+    if (f.isSelect) {
+      fg.innerHTML = `<label>${esc(f.label)}</label><select id="${f.id}">${f.options.map(o=>`<option ${o===f.val?'selected':''}>${o}</option>`).join('')}</select>`;
+    } else if (f.isCompanySelect) {
+      const matchedCompany = COMPANIES.find(c => c.toLowerCase() === (f.val||'').toLowerCase()) || '';
+      fg.innerHTML = `<label>${esc(f.label)}</label><select id="${f.id}">
+        <option value="">— Select company —</option>
+        ${COMPANIES.map(c=>`<option ${(matchedCompany===c||f.val===c)?'selected':''}>${c}</option>`).join('')}
+        ${f.val && !COMPANIES.includes(f.val) ? `<option selected>${f.val}</option>` : ''}
+      </select>`;
+    } else {
+      fg.innerHTML = `<label>${esc(f.label)}</label><input id="${f.id}" type="${f.type||'text'}" value="${esc(f.val)}" placeholder="${esc(f.placeholder||'')}"${f.bold?' style="font-weight:700"':''}>`;
+    }
+    grid.appendChild(fg);
+  });
+  card.appendChild(grid);
+
+  // Approval level indicator
+  const lvlDiv = document.createElement('div'); lvlDiv.id='lvl-ind'; lvlDiv.className='level-indicator'; lvlDiv.style.marginTop='16px';
+  card.appendChild(lvlDiv);
+
+  // Items
+  const itSec = document.createElement('div'); itSec.style.marginTop='8px';
+  itSec.innerHTML = `<div class="section-title" style="margin-bottom:10px">Line Items</div>`;
+  const itWrap = document.createElement('div'); itWrap.id='items-wrap';
+  itSec.appendChild(itWrap);
+  const addBtn = document.createElement('button'); addBtn.className='btn btn-outline btn-sm'; addBtn.style.marginTop='10px'; addBtn.textContent='+ Add item';
+  addBtn.onclick = () => {
+    const maxId = state.reviewItems.reduce((m,i)=>Math.max(m,i._id),0);
+    state.reviewItems.push({_id:maxId+1,description:'',qty:1,unitPrice:0,total:0});
+    rebuildItems();
+  };
+  itSec.appendChild(addBtn);
+  card.appendChild(itSec);
+
+  // Actions
+  const actDiv = document.createElement('div'); actDiv.style.cssText='display:flex;gap:10px;margin-top:24px;flex-wrap:wrap';
+  const createBtn = document.createElement('button'); createBtn.className='btn btn-success';
+  createBtn.innerHTML = `${svgIcon('check')} Create PO`;
+  createBtn.onclick = () => confirmCreatePO();
+  const cancelBtn = document.createElement('button'); cancelBtn.className='btn btn-outline'; cancelBtn.textContent='Cancel';
+  cancelBtn.onclick = () => { state.reviewData=null; state.reviewItems=[]; state.page='upload'; render(); };
+  actDiv.appendChild(createBtn); actDiv.appendChild(cancelBtn);
+  card.appendChild(actDiv);
+  wrap.appendChild(card);
+
+  // Wire live level indicator
+  setTimeout(()=>{
+    rebuildItems();
+    updateLevelIndicator();
+    const ti = document.getElementById('f-total');
+    if (ti) ti.addEventListener('input', updateLevelIndicator);
+  },30);
+
+  return wrap;
+}
+
+function updateLevelIndicator() {
+  const t = parseFloat(document.getElementById('f-total')?.value)||0;
+  const lvl = getLevel(t);
+  const lm  = {1:'Level 1 — €0 to €750',2:'Level 2 — €751 to €10,000',3:'Level 3 — €10,001 to €200,000'};
+  const lc  = {1:'badge-blue',2:'badge-amber',3:'badge-red'};
+  const ld  = document.getElementById('lvl-ind');
+  if (ld) ld.innerHTML = `<span style="font-size:12px;color:var(--text2);font-weight:500">Approval level required:</span><span class="badge ${lc[lvl]}" style="margin-left:8px">${lm[lvl]}</span>`;
+}
+
+function rebuildItems() {
+  const wrap = document.getElementById('items-wrap'); if (!wrap) return;
+  wrap.innerHTML = '';
+  if (!state.reviewItems.length) return;
+  const hdr = document.createElement('div'); hdr.className='items-header-row';
+  hdr.innerHTML='<span>Description</span><span>Qty</span><span>Unit Price</span><span>Total</span><span></span>';
+  wrap.appendChild(hdr);
+  state.reviewItems.forEach((item,idx)=>{
+    const row = document.createElement('div'); row.className='item-row';
+    row.innerHTML = `
+      <input type="text"   value="${esc(item.description||'')}" placeholder="Item description" data-f="description" data-i="${idx}">
+      <input type="number" value="${item.qty||1}"               min="1" step="1"    data-f="qty"         data-i="${idx}">
+      <input type="number" value="${item.unitPrice||0}"          step="0.01"         data-f="unitPrice"   data-i="${idx}">
+      <input type="number" value="${item.total||0}"              step="0.01"         data-f="total"       data-i="${idx}">
+      <button class="del-btn" data-di="${idx}" title="Remove row">×</button>`;
+    row.querySelectorAll('input').forEach(inp=>{ inp.addEventListener('input',e=>{ state.reviewItems[+e.target.dataset.i][e.target.dataset.f]=e.target.value; }); });
+    row.querySelector('.del-btn').onclick = e => { state.reviewItems.splice(+e.target.dataset.di,1); rebuildItems(); };
+    wrap.appendChild(row);
+  });
+}
+
+function confirmCreatePO() {
+  const g = id => document.getElementById(id)?.value?.trim()||'';
+  const total = parseFloat(g('f-total'))||0;
+  if (!g('f-company')) { toast('Company name is required.','error'); return; }
+  if (!g('f-supplier')) { toast('Supplier name is required.','error'); return; }
+  if (!total) { toast('Total amount is required.','error'); return; }
+
+  const po = {
+    id: 'PO-'+uid(),
+    company:         g('f-company'),
+    poNumber:        g('f-ponum'),
+    supplier:        g('f-supplier'),
+    supplierAddress: g('f-addr'),
+    supplierNIF:     g('f-nif'),
+    project:         g('f-project'),
+    netTotal:        parseFloat(g('f-net'))||0,
+    total,
+    currency:        g('f-currency')||'EUR',
+    paymentTerms:    g('f-terms'),
+    items: state.reviewItems.filter(i=>i.description).map(i=>({ description:String(i.description), qty:Number(i.qty)||1, unitPrice:Number(i.unitPrice)||0, total:Number(i.total)||0 })),
+    status: 'draft',
+    approvalLevel: getLevel(total),
+    requestedBy: state.currentUser.id,
+    createdAt: new Date().toISOString(),
+    requestedAt: null,
+    approvedBy: null, approvedAt: null,
+    rejectedBy: null, rejectedAt: null,
+    rejectionReason: '',
+    source: state.reviewSource,
+    originalPdfB64:  state.reviewSource === 'pdf' ? state.reviewPdfB64  : null,
+    originalPdfName: state.reviewSource === 'pdf' ? state.reviewPdfName : null,
+  };
+
+  state.pos.unshift(po);
+  addEvent('created', po.id, state.currentUser.id, `PO ${po.poNumber||po.id} created via ${state.reviewSource==='pdf'?'PDF':'manual entry'} (${po.currency} ${po.total})`);
+  saveState();
+  state.reviewData=null; state.reviewItems=[]; state.reviewSource=null;
+  state.reviewPdfB64=null; state.reviewPdfName=null;
+  state.page='po-detail'; state.currentPO=po.id;
+  toast('PO created successfully!');
+  render();
+}
+
+// ============================================================
+// PO TABLE
+// ============================================================
+function buildPOTable(pos) {
+  const wrap = document.createElement('div'); wrap.className='table-wrap';
+  if (!pos.length) { wrap.innerHTML='<p style="padding:28px;text-align:center;color:var(--text3)">No purchase orders found.</p>'; return wrap; }
+  const tbl = document.createElement('table');
+  tbl.innerHTML=`<thead><tr><th>PO Number</th><th>Supplier</th><th>Project</th><th>Amount</th><th>Level</th><th>Status</th><th>Date</th><th></th></tr></thead>`;
+  const tbody = document.createElement('tbody');
+  pos.forEach(po=>{
+    const sm = { draft:'badge-gray', pending:'badge-amber', approved:'badge-green', rejected:'badge-red' };
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td style="font-family:monospace;font-size:12px;font-weight:600">${esc(po.poNumber||po.id)}</td>
+      <td>${esc(po.supplier||'—')}</td>
+      <td style="color:var(--text2)">${esc(po.project||'—')}</td>
+      <td style="font-weight:700">${fmtCurrency(po.total,po.currency)}</td>
+      <td><span class="badge badge-blue">L${po.approvalLevel}</span></td>
+      <td><span class="badge ${sm[po.status]||'badge-gray'}">${po.status.charAt(0).toUpperCase()+po.status.slice(1)}</span></td>
+      <td style="color:var(--text3);font-size:12px;white-space:nowrap">${po.requestedAt?fmtDate(po.requestedAt):(po.status==='draft'?'Draft':'—')}</td>
+      <td><button class="btn btn-outline btn-sm" onclick="viewPO('${po.id}')">View</button></td>`;
+    tbody.appendChild(tr);
+  });
+  tbl.appendChild(tbody); wrap.appendChild(tbl); return wrap;
+}
+function viewPO(id) { state.page='po-detail'; state.currentPO=id; render(); }
+
+// ============================================================
+// PO LIST
+// ============================================================
+function renderPOList() {
+  const u=state.currentUser, isAdmin=u.role==='admin';
+  const myPOs = isAdmin ? state.pos : state.pos.filter(p=>p.requestedBy===u.id);
+  const div = document.createElement('div');
+  div.innerHTML=`<div class="page-header"><h2>Purchase Orders</h2><p>${isAdmin?'All POs in the system':'Your submitted POs'}</p></div>`;
+  const card=document.createElement('div'); card.className='card'; card.style.padding='0';
+  card.appendChild(buildPOTable(myPOs)); div.appendChild(card); return div;
+}
+
+// ============================================================
+// PENDING
+// ============================================================
+function renderPending() {
+  const u=state.currentUser, isAdmin=u.role==='admin';
+  const pending = state.pos.filter(p => {
+    if (p.status !== 'pending') return false;
+    if (isAdmin) return true;
+    const groups = getApprovalGroups(p.company, p.approvalLevel);
+    const approvedBy = p.approvals || [];
+    return groups.some(g => g.includes(u.login) && !approvedBy.includes(u.login));
+  });
+  const div=document.createElement('div');
+  div.innerHTML=`<div class="page-header"><h2>Pending Approval</h2><p>POs awaiting your approval action</p></div>`;
+  const card=document.createElement('div'); card.className='card'; card.style.padding='0';
+  card.appendChild(buildPOTable(pending)); div.appendChild(card); return div;
+}
+
+// ============================================================
+// PO DETAIL
+// ============================================================
+function renderPODetail() {
+  const po = state.pos.find(p=>p.id===state.currentPO);
+  if (!po) { const d=document.createElement('div'); d.innerHTML='<p>PO not found.</p>'; return d; }
+  const u=state.currentUser, isAdmin=u.role==='admin';
+  const isRequester = po.requestedBy===u.id;
+  const canApprove  = canUserApprove(u, po) && !(po.approvals||[]).includes(u.login);
+
+  const div=document.createElement('div');
+  div.innerHTML = `<button class="btn btn-outline btn-sm" style="margin-bottom:20px" onclick="nav('${isRequester?'pos':'pending'}')">← Back</button>
+  <div class="page-header" style="margin-bottom:20px">
+    <h2>${esc(po.poNumber||po.id)}</h2>
+    <p>${esc(po.company||'')} → ${esc(po.supplier||'')} · Created ${fmtDate(po.createdAt||po.requestedAt)}</p>
+  </div>`;
+
+  // Approval level cards
+  const lvlSec=document.createElement('div'); lvlSec.style.marginBottom='20px';
+  lvlSec.innerHTML=`<div class="section-title">Approval Level</div>`;
+  const lc=document.createElement('div'); lc.className='level-cards';
+  [1,2,3].forEach(lvl=>{
+    const c=document.createElement('div'); c.className='level-card';
+    const lm={1:'Level 1<br><small>€0 – €750</small>',2:'Level 2<br><small>€751 – €10,000</small>',3:'Level 3<br><small>€10,001 – €200,000</small>'};
+    if (lvl===po.approvalLevel) {
+      c.classList.add(po.status==='approved'?'approved':po.status==='rejected'?'rejected':'active');
+    }
+    c.innerHTML=`<h4>${lm[lvl]}</h4>`;
+    if (lvl===po.approvalLevel&&po.status!=='draft'&&po.status!=='pending') {
+      c.innerHTML+=`<div class="status-label">${po.status}</div>`;
+    }
+    lc.appendChild(c);
+  });
+  lvlSec.appendChild(lc);
+
+  // Approval groups status panel
+  if (po.status === 'pending' || po.status === 'approved') {
+    const groups = getApprovalStatus(po);
+    if (groups.length) {
+      const groupPanel = document.createElement('div');
+      groupPanel.style.cssText='margin-top:12px;display:flex;flex-direction:column;gap:8px';
+      const panelTitle = document.createElement('div');
+      panelTitle.style.cssText='font-size:9px;text-transform:uppercase;letter-spacing:0.1em;color:var(--text3);font-weight:600;margin-bottom:4px';
+      panelTitle.textContent = groups.length > 1 ? 'Approval Groups — Any one group can approve' : 'Required Approvers';
+      groupPanel.appendChild(panelTitle);
+      groups.forEach((g, i) => {
+        const row = document.createElement('div');
+        row.style.cssText=`display:flex;align-items:center;gap:8px;padding:8px 12px;border-radius:var(--radius);border:1px solid ${g.satisfied?'var(--green-border)':'var(--border)'};background:${g.satisfied?'var(--green-dim)':'var(--surface2)'}`;
+        if (groups.length > 1) {
+          const lbl = document.createElement('span');
+          lbl.style.cssText='font-size:9px;color:var(--text3);text-transform:uppercase;letter-spacing:0.06em;min-width:44px;flex-shrink:0';
+          lbl.textContent = 'Option '+('ABCDEFGH'[i]);
+          row.appendChild(lbl);
+        }
+        g.group.forEach(login => {
+          const usr = state.users.find(x=>x.login===login);
+          const approved = (po.approvals||[]).includes(login);
+          const chip = document.createElement('span');
+          chip.style.cssText=`font-size:10px;padding:3px 9px;border-radius:2px;font-weight:600;border:1px solid ${approved?'var(--green-border)':'var(--border2)'};background:${approved?'var(--green-dim)':'var(--surface3)'};color:${approved?'var(--green)':'var(--text2)'}`;
+          chip.textContent = (approved?'✓ ':'') + (usr?.name||login);
+          row.appendChild(chip);
+        });
+        if (g.satisfied) {
+          const done = document.createElement('span');
+          done.style.cssText='margin-left:auto;font-size:10px;color:var(--green);font-weight:700;text-transform:uppercase;letter-spacing:0.06em';
+          done.textContent='✓ Complete';
+          row.appendChild(done);
+        }
+        groupPanel.appendChild(row);
+      });
+      lvlSec.appendChild(groupPanel);
+    }
+  }
+  div.appendChild(lvlSec);
+
+  // PO Fields
+  const cur=po.currency;
+  const infoCard=document.createElement('div'); infoCard.className='card'; infoCard.style.marginBottom='16px';
+  infoCard.innerHTML=`<div class="section-title">Purchase Order Details</div>
+  <div class="po-grid">
+    <div class="po-field"><div class="key">Company</div><div class="val">${esc(po.company||'—')}</div></div>
+    <div class="po-field"><div class="key">PO Number</div><div class="val" style="font-family:monospace">${esc(po.poNumber||'—')}</div></div>
+    <div class="po-field"><div class="key">Supplier</div><div class="val">${esc(po.supplier||'—')}</div></div>
+    <div class="po-field"><div class="key">Supplier Address</div><div class="val">${esc(po.supplierAddress||'—')}</div></div>
+    <div class="po-field"><div class="key">Supplier NIF / VAT</div><div class="val" style="font-family:monospace">${esc(po.supplierNIF||'—')}</div></div>
+    <div class="po-field"><div class="key">Project</div><div class="val">${esc(po.project||'—')}</div></div>
+    <div class="po-field"><div class="key">Net Total</div><div class="val">${fmtCurrency(po.netTotal,cur)}</div></div>
+    <div class="po-field"><div class="key">Total (incl. VAT)</div><div class="val" style="font-size:18px;font-weight:700">${fmtCurrency(po.total,cur)}</div></div>
+    <div class="po-field"><div class="key">Currency</div><div class="val">${esc(po.currency||'EUR')}</div></div>
+    <div class="po-field"><div class="key">Payment Terms</div><div class="val">${esc(po.paymentTerms||'—')}</div></div>
+  </div>`;
+  div.appendChild(infoCard);
+
+  // Items
+  if (po.items?.length) {
+    const ic=document.createElement('div'); ic.className='card'; ic.style.marginBottom='16px';
+    ic.innerHTML=`<div class="section-title">Line Items</div>`;
+    const tw=document.createElement('div'); tw.className='table-wrap';
+    tw.innerHTML=`<table><thead><tr><th>Description</th><th>Qty</th><th>Unit Price</th><th>Total</th></tr></thead></table>`;
+    const tb=document.createElement('tbody');
+    po.items.forEach(it=>{ const tr=document.createElement('tr'); tr.innerHTML=`<td>${esc(it.description)}</td><td>${it.qty}</td><td>${fmtCurrency(it.unitPrice,cur)}</td><td>${fmtCurrency(it.total,cur)}</td>`; tb.appendChild(tr); });
+    tw.querySelector('table').appendChild(tb); ic.appendChild(tw); div.appendChild(ic);
+  }
+
+  // Approval status
+  if (po.status==='approved') {
+    const approver=state.users.find(u=>u.id===po.approvedBy);
+    const stamp=document.createElement('div'); stamp.className='approval-stamp';
+    stamp.innerHTML=`<div class="stamp-text">APPROVED</div>
+    <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px">
+      <div style="display:flex;align-items:center;gap:12px">
+        <div style="font-size:28px">✅</div>
+        <div>
+          <div style="font-weight:700;color:var(--green);font-size:14px;text-transform:uppercase;letter-spacing:0.06em">PO Approved</div>
+          <div style="font-size:11px;color:var(--text2);margin-top:3px">By <strong>${esc(approver?.name||po.approvedBy)}</strong> on ${fmtDateTime(po.approvedAt)}</div>
+        </div>
+      </div>
+      ${po.approvedPdfB64 ? `<button class="btn btn-success btn-sm" id="dl-pdf-btn">⬇ Download Approved PDF</button>` : ''}
+    </div>`;
+    if (po.approvedPdfB64) {
+      stamp.querySelector('#dl-pdf-btn').onclick = () => {
+        const link = document.createElement('a');
+        link.href = 'data:application/pdf;base64,' + po.approvedPdfB64;
+        link.download = `PO_${(po.poNumber||po.id).replace(/[^a-zA-Z0-9]/g,'_')}_APPROVED.pdf`;
+        link.click();
+      };
+    }
+    div.appendChild(stamp);
+  }
+  if (po.status==='rejected') {
+    const rj=state.users.find(u=>u.id===po.rejectedBy);
+    const rc=document.createElement('div'); rc.className='alert alert-error'; rc.style.marginBottom='16px';
+    rc.innerHTML=`<strong>PO Rejected</strong> by ${esc(rj?.name||po.rejectedBy)} on ${fmtDate(po.rejectedAt)}<br><em style="opacity:0.85">${esc(po.rejectionReason)}</em>`;
+    div.appendChild(rc);
+  }
+
+  // Action buttons
+  const actDiv=document.createElement('div'); actDiv.className='btn-group'; actDiv.style.marginBottom='24px';
+  if (po.status==='draft'&&isRequester) {
+    const b=document.createElement('button'); b.className='btn btn-blue';
+    b.innerHTML=`${svgIcon('send')} Request Approval`;
+    b.onclick=()=>requestApproval(po); actDiv.appendChild(b);
+  }
+  if (po.status==='pending'&&canApprove) {
+    const groups = getApprovalGroups(po.company, po.approvalLevel);
+    const needsJoint = groups.some(g => g.length > 1 && g.includes(u.login));
+    const alreadyApproved = (po.approvals||[]).includes(u.login);
+    if (!alreadyApproved) {
+      const ba=document.createElement('button'); ba.className='btn btn-success';
+      ba.innerHTML=`${svgIcon('check')} ${needsJoint ? 'Record My Approval' : 'Approve PO'}`;
+      ba.onclick=()=>approvePO(po); actDiv.appendChild(ba);
+      const br=document.createElement('button'); br.className='btn btn-danger';
+      br.innerHTML=`${svgIcon('x')} Reject PO`;
+      br.onclick=()=>{ state.modal={type:'reject',po}; render(); }; actDiv.appendChild(br);
+    } else {
+      const done=document.createElement('div');
+      done.style.cssText='font-size:11px;color:var(--green);padding:8px 12px;border:1px solid var(--green-border);border-radius:var(--radius);background:var(--green-dim)';
+      done.textContent='✓ You have already approved this PO. Waiting for other required approvers.';
+      actDiv.appendChild(done);
+    }
+  }
+  div.appendChild(actDiv);
+
+  // History
+  const poEvts=state.archive.filter(e=>e.poId===po.id).reverse();
+  if (poEvts.length) {
+    const hist=document.createElement('div');
+    hist.innerHTML=`<h3 style="font-size:14px;font-weight:700;margin-bottom:12px">PO History</h3>`;
+    const hCard=document.createElement('div'); hCard.className='card';
+    const tl=document.createElement('div'); tl.className='timeline';
+    poEvts.forEach(ev=>tl.appendChild(buildTimelineItem(ev)));
+    hCard.appendChild(tl); hist.appendChild(hCard); div.appendChild(hist);
+  }
+  return div;
+}
+
+function requestApproval(po) {
+  po.status      = 'pending';
+  po.requestedAt = new Date().toISOString();
+  po.approvals   = []; // track individual approvals for joint-approval support
+  addEvent('requested', po.id, state.currentUser.id, `Approval requested — Level ${po.approvalLevel}, ${fmtCurrency(po.total,po.currency)}`);
+
+  const approverLogins = getApproverLogins(po.company, po.approvalLevel);
+  const approvers      = getUsersByLogins(approverLogins);
+  console.log('[Approval] Company:', po.company, '| Level:', po.approvalLevel);
+  console.log('[Approval] Approver logins:', approverLogins);
+  console.log('[Approval] Resolved users:', approvers.map(a=>a.email));
+
+  if (!approvers.length) {
+    toast(`Warning: No approvers found for "${po.company}" Level ${po.approvalLevel}. Check the company name matches the approval matrix exactly.`, 'error', 8000);
+    saveState(); render(); return;
+  }
+
+  const groups         = getApprovalGroups(po.company, po.approvalLevel);
+  const groupDesc      = groups.map(g => g.map(l => state.users.find(u=>u.login===l)?.name||l).join(' + ')).join('  OR  ');
+  const requester      = state.currentUser;
+
+  approvers.forEach(a => {
+    const msg =
+`Dear ${a.name},
+
+A Purchase Order requires your approval (Level ${po.approvalLevel}).
+
+PO Number   : ${po.poNumber||po.id}
+Company     : ${po.company}
+Supplier    : ${po.supplier}
+Project     : ${po.project||'—'}
+Amount      : ${fmtCurrency(po.total,po.currency)}
+Payment     : ${po.paymentTerms||'—'}
+
+Requested by: ${requester.name} (${requester.email})
+Date        : ${fmtDateTime(po.requestedAt)}
+
+Required approvers: ${groupDesc}
+
+Please log in to the PO Approval Tool to review and approve or reject this PO.
+
+— PO Approval Tool · OPTIMAL Group`;
+    sendEmail(a.email, `PO Approval Required: ${po.poNumber||po.id}`, msg, po.id);
+  });
+  saveState();
+  toast(`Approval request sent to ${approvers.length} approver(s).`);
+  render();
+}
+
+// ============================================================
+// PDF WATERMARK STAMPING (pdf-lib)
+// ============================================================
+async function generateApprovedPDF(po, approverName, approvedAt) {
+  const { PDFDocument, rgb, degrees, StandardFonts, PageSizes } = PDFLib;
+
+  // Use original PDF if available, otherwise create a simple summary PDF
+  let pdfDoc;
+  if (po.originalPdfB64) {
+    const pdfBytes = Uint8Array.from(atob(po.originalPdfB64), c => c.charCodeAt(0));
+    pdfDoc = await PDFDocument.load(pdfBytes, { ignoreEncryption: true });
+  } else {
+    // No original PDF — build a simple one-page summary
+    pdfDoc = await PDFDocument.create();
+    const page = pdfDoc.addPage(PageSizes.A4);
+    const font = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
+    const fontR = await pdfDoc.embedFont(StandardFonts.Helvetica);
+    const { width, height } = page.getSize();
+    const m = 50;
+    let y = height - 60;
+
+    page.drawText('PURCHASE ORDER', { x:m, y, font, size:18, color:rgb(0.05,0.1,0.18) });
+    y -= 20;
+    page.drawText(`PO Number: ${po.poNumber||po.id}`, { x:m, y, font:fontR, size:10, color:rgb(0.3,0.3,0.3) });
+    y -= 14;
+    page.drawText(`Company: ${po.company||''}`, { x:m, y, font:fontR, size:10, color:rgb(0.3,0.3,0.3) });
+    y -= 14;
+    page.drawText(`Supplier: ${po.supplier||''}`, { x:m, y, font:fontR, size:10, color:rgb(0.3,0.3,0.3) });
+    y -= 14;
+    page.drawText(`Amount: ${fmtCurrency(po.total, po.currency)}`, { x:m, y, font:fontR, size:10, color:rgb(0.3,0.3,0.3) });
+  }
+
+  const font     = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
+  const fontReg  = await pdfDoc.embedFont(StandardFonts.Helvetica);
+  const pages    = pdfDoc.getPages();
+
+  for (const page of pages) {
+    const { width, height } = page.getSize();
+
+    // ── Diagonal APPROVED watermark ──────────────────────
+    page.drawText('APPROVED', {
+      x:        width / 2 - 160,
+      y:        height / 2 - 30,
+      size:     90,
+      font,
+      color:    rgb(0.0, 0.72, 0.27),
+      opacity:  0.10,
+      rotate:   degrees(45),
+    });
+
+    // ── Green approval banner at bottom of each page ─────
+    const bannerH = 52;
+    const bannerY = 18;
+
+    // Green background strip
+    page.drawRectangle({
+      x:      18,
+      y:      bannerY,
+      width:  width - 36,
+      height: bannerH,
+      color:  rgb(0.02, 0.38, 0.12),
+      opacity: 0.92,
+    });
+
+    // Green border
+    page.drawRectangle({
+      x:         18,
+      y:         bannerY,
+      width:     width - 36,
+      height:    bannerH,
+      borderColor: rgb(0.0, 0.72, 0.27),
+      borderWidth: 1.5,
+      color:     rgb(0,0,0),
+      opacity:   0,
+    });
+
+    // "✓ APPROVED" text
+    page.drawText('APPROVED', {
+      x:      36,
+      y:      bannerY + 32,
+      size:   14,
+      font,
+      color:  rgb(0.0, 0.95, 0.45),
+    });
+
+    // Approver info
+    page.drawText(`Approved by: ${approverName}`, {
+      x:      36,
+      y:      bannerY + 16,
+      size:   8,
+      font:   fontReg,
+      color:  rgb(0.7, 0.95, 0.75),
+    });
+    page.drawText(`Date: ${fmtDateTime(approvedAt)}`, {
+      x:      36,
+      y:      bannerY + 6,
+      size:   8,
+      font:   fontReg,
+      color:  rgb(0.7, 0.95, 0.75),
+    });
+
+    // PO number right-aligned
+    const poLabel = `PO: ${po.poNumber||po.id}`;
+    const poLabelW = font.widthOfTextAtSize(poLabel, 9);
+    page.drawText(poLabel, {
+      x:     width - 36 - poLabelW,
+      y:     bannerY + 32,
+      size:  9,
+      font,
+      color: rgb(0.0, 0.95, 0.45),
+    });
+  }
+
+  const outBytes = await pdfDoc.save();
+  return btoa(String.fromCharCode(...outBytes));
+}
+
+async function approvePO(po) {
+  const u = state.currentUser;
+  const now = new Date().toISOString();
+
+  // Record this user's individual approval
+  if (!po.approvals) po.approvals = [];
+  if (!po.approvals.includes(u.login)) po.approvals.push(u.login);
+
+  addEvent('approval_part', po.id, u.id, `${u.name} approved`);
+
+  // Check if any group is now fully satisfied
+  const complete = isApprovalComplete(po);
+
+  if (complete) {
+    // Final approval — all required members of a group have approved
+    po.status     = 'approved';
+    po.approvedBy = u.id;
+    po.approvedAt = now;
+
+    // Build approver names string for watermark
+    const approvedNames = po.approvals.map(l => state.users.find(x=>x.login===l)?.name||l).join(', ');
+
+    // Generate watermarked PDF
+    try {
+      po.approvedPdfB64 = await generateApprovedPDF(po, approvedNames, po.approvedAt);
+    } catch(err) {
+      console.error('PDF generation failed:', err);
+      po.approvedPdfB64 = null;
+      toast('Warning: PDF watermark generation failed.', 'error');
+    }
+
+    addEvent('approved', po.id, u.id, `PO fully approved. Approvers: ${approvedNames}`);
+
+    const req = state.users.find(x => x.id === po.requestedBy);
+    if (req) {
+      const msg =
+`Dear ${req.name},
+
+Your Purchase Order has been APPROVED.
+
+PO Number   : ${po.poNumber||po.id}
+Company     : ${po.company}
+Supplier    : ${po.supplier}
+Project     : ${po.project||'—'}
+Amount      : ${fmtCurrency(po.total, po.currency)}
+
+Approved by : ${approvedNames}
+Approved on : ${fmtDateTime(po.approvedAt)}
+
+The approved PO with APPROVED watermark is ready for download.
+Please log in to the PO Approval Tool, open this PO and click
+"Download Approved PDF" to retrieve the stamped document.
+
+— PO Approval Tool · OPTIMAL Group`;
+      sendEmail(req.email, `✅ PO Approved: ${po.poNumber||po.id}`, msg, po.id);
+    }
+    saveState();
+    toast('PO fully approved! Confirmation email sent.');
+  } else {
+    // Partial approval — notify remaining approvers in the same group
+    const groups   = getApprovalGroups(po.company, po.approvalLevel);
+    const approvedBy = po.approvals;
+    // Find groups where this user's approval made progress (they're in the group)
+    groups.filter(g => g.includes(u.login)).forEach(g => {
+      const remaining = g.filter(l => !approvedBy.includes(l));
+      remaining.forEach(login => {
+        const usr = state.users.find(x=>x.login===login);
+        if (usr) {
+          sendEmail(usr.email, `PO Partial Approval: ${po.poNumber||po.id}`,
+`Dear ${usr.name},
+
+${u.name} has approved PO ${po.poNumber||po.id}.
+Your approval is also required to complete this PO.
+
+PO Number : ${po.poNumber||po.id}
+Supplier  : ${po.supplier}
+Amount    : ${fmtCurrency(po.total,po.currency)}
+
+Please log in to the PO Approval Tool to complete the approval.
+
+— PO Approval Tool · OPTIMAL Group`, po.id);
+        }
+      });
+    });
+    saveState();
+    toast(`Your approval recorded. Waiting for remaining approvers.`);
+  }
+  render();
+}
+
+function rejectPO(po, reason) {
+  const u=state.currentUser;
+  po.status='rejected'; po.rejectedBy=u.id; po.rejectedAt=new Date().toISOString(); po.rejectionReason=reason;
+  addEvent('rejected', po.id, u.id, `Rejected by ${u.name}. Reason: ${reason}`);
+  const req=state.users.find(x=>x.id===po.requestedBy);
+  if (req) {
+    const msg =
+`Dear ${req.name},
+
+Your Purchase Order has NOT been approved.
+
+PO Number   : ${po.poNumber||po.id}
+Supplier    : ${po.supplier}
+Amount      : ${fmtCurrency(po.total,po.currency)}
+
+Rejected by : ${u.name} (${u.email})
+Rejected on : ${fmtDateTime(po.rejectedAt)}
+
+Reason:
+${reason}
+
+Please review the PO and resubmit if applicable.
+
+— PO Approval Tool · OPTIMAL`;
+    sendEmail(req.email, `❌ PO Not Approved: ${po.poNumber||po.id}`, msg, po.id);
+  }
+  saveState(); state.modal=null; toast('PO rejected.','error'); render();
+}
+
+// ============================================================
+// ARCHIVE
+// ============================================================
+function renderArchive() {
+  const div=document.createElement('div');
+  div.innerHTML=`<div class="page-header"><h2>Archive</h2><p>Complete log of all PO approval activities</p></div>`;
+  const card=document.createElement('div'); card.className='card'; card.style.padding='0 24px';
+  if (!state.archive.length) { card.innerHTML='<p style="padding:28px;text-align:center;color:var(--text3)">No archive entries yet.</p>'; div.appendChild(card); return div; }
+  const tl=document.createElement('div'); tl.className='timeline';
+  state.archive.forEach(ev=>{
+    const item=buildTimelineItem(ev);
+    if (ev.poId) { item.style.cursor='pointer'; item.onclick=()=>viewPO(ev.poId); }
+    tl.appendChild(item);
+  });
+  card.appendChild(tl); div.appendChild(card); return div;
+}
+
+function buildTimelineItem(ev) {
+  const bgMap = { created:'#E6F1FB', requested:'#FAEEDA', approved:'#EAF3DE', rejected:'#FCEBEB', email:'#E1F5EE' };
+  const icons  = { created:'📄', requested:'📤', approved:'✅', rejected:'❌', email:'📧' };
+  const po = ev.poId ? state.pos.find(p=>p.id===ev.poId) : null;
+  const item=document.createElement('div'); item.className='timeline-item';
+  item.innerHTML=`
+    <div class="timeline-dot" style="background:${bgMap[ev.type]||'#F0EFE9'};font-size:16px">${icons[ev.type]||'•'}</div>
+    <div class="timeline-body" style="flex:1">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px">
+        <div class="who">${ev.type==='email'?'Email → '+esc(ev.to):(esc(ev.userName||ev.type))}</div>
+        <div class="when">${fmtDateTime(ev.ts)}</div>
+      </div>
+      ${ev.poId?`<div style="font-size:11px;color:var(--text3);font-family:monospace;margin-top:2px">${esc(po?.poNumber||ev.poId)}</div>`:''}
+      <div class="what">${ev.type==='email'?`Subject: ${esc(ev.subject)}`:(esc(ev.message||''))}</div>
+    </div>`;
+  return item;
+}
+
+// ============================================================
+// USERS
+// ============================================================
+function renderUsers() {
+  const div=document.createElement('div');
+  div.innerHTML=`<div class="page-header"><h2>User Management</h2><p>Manage access and approval levels</p></div>`;
+
+  // Add user form
+  const addCard=document.createElement('div'); addCard.className='card'; addCard.style.marginBottom='24px';
+  addCard.innerHTML=`
+    <div style="font-size:14px;font-weight:700;margin-bottom:18px">Add New User</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px;margin-bottom:14px">
+      <div class="form-group" style="margin:0"><label>Full Name</label><input id="nu-name" placeholder="Full name"></div>
+      <div class="form-group" style="margin:0"><label>Login</label><input id="nu-login" placeholder="username"></div>
+      <div class="form-group" style="margin:0"><label>Password</label><input id="nu-pass" placeholder="password" type="password"></div>
+      <div class="form-group" style="margin:0"><label>Email</label><input id="nu-email" type="email" placeholder="user@company.com"></div>
+      <div class="form-group" style="margin:0"><label>Role</label><select id="nu-role"><option value="user">User</option><option value="admin">Administrator</option></select></div>
+      <div class="form-group" style="margin:0"><label>Approval Levels</label>
+        <div style="display:flex;gap:12px;margin-top:8px;align-items:center">
+          <label style="display:flex;align-items:center;gap:5px;font-size:13px;text-transform:none;letter-spacing:0;color:var(--text)"><input type="checkbox" id="nu-l1"> L1</label>
+          <label style="display:flex;align-items:center;gap:5px;font-size:13px;text-transform:none;letter-spacing:0;color:var(--text)"><input type="checkbox" id="nu-l2"> L2</label>
+          <label style="display:flex;align-items:center;gap:5px;font-size:13px;text-transform:none;letter-spacing:0;color:var(--text)"><input type="checkbox" id="nu-l3"> L3</label>
+        </div>
+      </div>
+    </div>
+    <button class="btn btn-primary btn-sm" id="nu-submit">Add User</button>`;
+  addCard.querySelector('#nu-submit').onclick=()=>{
+    const g=id=>addCard.querySelector(id)?.value?.trim()||'';
+    const name=g('#nu-name'),login=g('#nu-login'),pass=g('#nu-pass'),email=g('#nu-email'),role=g('#nu-role');
+    const levels=[1,2,3].filter(l=>addCard.querySelector(`#nu-l${l}`)?.checked);
+    if (!name||!login||!pass||!email){toast('All fields are required.','error');return;}
+    if (state.users.find(u=>u.login===login)){toast('Login already exists.','error');return;}
+    state.users.push({id:'u'+uid(),login,pass,name,email,role,levels});
+    saveState(); toast(`User ${name} added.`); render();
+  };
+  div.appendChild(addCard);
+
+  // Users list
+  const listCard=document.createElement('div'); listCard.className='card';
+  const bgC=['#E6F1FB','#EAF3DE','#FAEEDA','#FCEBEB','#E1F5EE'];
+  const txC=['#185FA5','#3B6D11','#854F0B','#A32D2D','#0F6E56'];
+  state.users.forEach(u=>{
+    const row=document.createElement('div'); row.className='user-row';
+    const ini=u.name.split(' ').map(w=>w[0]).join('').slice(0,2).toUpperCase();
+    const ci=u.id.charCodeAt(0)%bgC.length;
+    row.innerHTML=`
+      <div class="user-avatar" style="background:${bgC[ci]};color:${txC[ci]}">${ini}</div>
+      <div class="user-info">
+        <div class="uname">${esc(u.name)} ${u.role==='admin'?'<span class="badge badge-blue" style="font-size:10px;margin-left:4px">Admin</span>':''}</div>
+        <div class="uemail">${esc(u.email)} · <span style="font-family:monospace">@${esc(u.login)}</span></div>
+      </div>
+      <div style="display:flex;gap:5px;flex-wrap:wrap">
+        ${(u.levels||[]).map(l=>`<span class="badge badge-gray">L${l}</span>`).join('')}
+        ${!u.levels?.length&&u.role!=='admin'?'<span style="font-size:11px;color:var(--text3)">No approval</span>':''}
+      </div>
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+        <select id="lvl-${u.id}" style="font-size:12px;padding:6px 10px;width:auto">
+          <option value="">No approval</option>
+          <option value="1"     ${u.levels?.join(',')===('1')    ?'selected':''}>L1 only</option>
+          <option value="1,2"   ${u.levels?.join(',')===('1,2')  ?'selected':''}>L1 + L2</option>
+          <option value="1,2,3" ${u.levels?.join(',')===('1,2,3')?'selected':''}>L1 + L2 + L3</option>
+          <option value="2"     ${u.levels?.join(',')===('2')    ?'selected':''}>L2 only</option>
+          <option value="2,3"   ${u.levels?.join(',')===('2,3')  ?'selected':''}>L2 + L3</option>
+          <option value="3"     ${u.levels?.join(',')===('3')    ?'selected':''}>L3 only</option>
+        </select>
+        <button class="btn btn-outline btn-sm" onclick="saveUserLevels('${u.id}')">Save</button>
+        ${u.login!=='admin'?`<button class="btn btn-sm" style="background:var(--red-bg);color:var(--red);border:1px solid var(--red-light)" onclick="removeUser('${u.id}','${esc(u.name)}')">Remove</button>`:''}
+      </div>`;
+    listCard.appendChild(row);
+  });
+  div.appendChild(listCard); return div;
+}
+function saveUserLevels(uid) {
+  const sel=document.getElementById('lvl-'+uid); if(!sel)return;
+  const u=state.users.find(x=>x.id===uid); if(!u)return;
+  u.levels=sel.value?sel.value.split(',').map(Number):[];
+  saveState(); toast(`${u.name}'s levels updated.`); render();
+}
+function removeUser(uid,name) {
+  if (!confirm(`Remove user "${name}"?`)) return;
+  state.users=state.users.filter(u=>u.id!==uid); saveState(); toast(`${name} removed.`); render();
+}
+
+// ============================================================
+// PARAMETERS
+// ============================================================
+function renderParameters() {
+  const div=document.createElement('div');
+  div.innerHTML=`<div class="page-header"><h2>Parameters</h2><p>Approval levels and company-based approval matrix — administrator only</p></div>`;
+
+  // Thresholds card
+  const threshCard=document.createElement('div'); threshCard.className='card'; threshCard.style.marginBottom='20px';
+  threshCard.innerHTML=`
+    <div style="font-size:13px;font-weight:700;margin-bottom:14px;color:var(--cyan);text-transform:uppercase;letter-spacing:0.06em">Approval Level Thresholds</div>
+    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:16px">
+      <div class="param-card" style="border:1px solid var(--blue-border);background:var(--blue-dim)">
+        <h3 style="color:var(--blue)">Level 1</h3>
+        <div class="amount">€0 – €750</div>
+      </div>
+      <div class="param-card" style="border:1px solid var(--amber-border);background:var(--amber-dim)">
+        <h3 style="color:var(--amber)">Level 2</h3>
+        <div class="amount">€751 – €10,000</div>
+      </div>
+      <div class="param-card" style="border:1px solid var(--red-border);background:var(--red-dim)">
+        <h3 style="color:var(--red)">Level 3</h3>
+        <div class="amount">€10,001 – €200,000</div>
+      </div>
+    </div>
+    <div class="alert alert-info" style="margin-bottom:0">
+      <strong>Joint approval:</strong> When a cell shows multiple names (e.g. "AR + MT"), ALL listed users must approve.
+      When multiple rows exist, ANY single row can satisfy the requirement.
+      Comma-separated entries in the same row = joint approval required.
+    </div>`;
+  div.appendChild(threshCard);
+
+  // Matrix card
+  const matCard=document.createElement('div'); matCard.className='card';
+  matCard.innerHTML=`<div style="font-size:13px;font-weight:700;margin-bottom:14px;color:var(--cyan);text-transform:uppercase;letter-spacing:0.06em">Approval Matrix by Company</div>`;
+
+  const tableWrap=document.createElement('div'); tableWrap.className='table-wrap';
+  const tbl=document.createElement('table');
+  // Header
+  const thead=document.createElement('thead');
+  const hRow=document.createElement('tr');
+  const cols=['Company','Level','Approval Options'];
+  cols.forEach(c=>{ const th=document.createElement('th'); th.textContent=c; hRow.appendChild(th); });
+  thead.appendChild(hRow); tbl.appendChild(thead);
+
+  const tbody=document.createElement('tbody');
+  const levelColors={1:'var(--blue)',2:'var(--amber)',3:'var(--red)'};
+  const levelBg={1:'var(--blue-dim)',2:'var(--amber-dim)',3:'var(--red-dim)'};
+
+  Object.entries(APPROVAL_MATRIX).forEach(([company, levels]) => {
+    let firstRow=true;
+    [1,2,3].forEach(lvl => {
+      const groups = levels[lvl] || [];
+      const tr=document.createElement('tr');
+
+      if (firstRow) {
+        const tdCo=document.createElement('td');
+        tdCo.rowSpan=3;
+        tdCo.style.cssText='font-weight:700;font-size:11px;text-transform:uppercase;letter-spacing:0.04em;vertical-align:middle;border-right:1px solid var(--border)';
+        tdCo.textContent=company;
+        tr.appendChild(tdCo);
+        firstRow=false;
+      }
+
+      const tdLvl=document.createElement('td');
+      tdLvl.style.cssText=`text-align:center;width:70px`;
+      tdLvl.innerHTML=`<span class="badge" style="background:${levelBg[lvl]};color:${levelColors[lvl]};border-color:${levelColors[lvl]}">L${lvl}</span>`;
+      tr.appendChild(tdLvl);
+
+      const tdGroups=document.createElement('td');
+      tdGroups.style.cssText='padding:8px 12px';
+      const groupsDiv=document.createElement('div');
+      groupsDiv.style.cssText='display:flex;flex-wrap:wrap;gap:6px;align-items:center';
+      groups.forEach((group, gi) => {
+        if (gi>0) {
+          const sep=document.createElement('span');
+          sep.style.cssText='font-size:9px;color:var(--text3);text-transform:uppercase;letter-spacing:0.08em';
+          sep.textContent='OR';
+          groupsDiv.appendChild(sep);
+        }
+        const groupDiv=document.createElement('div');
+        groupDiv.style.cssText='display:flex;gap:4px;align-items:center';
+        group.forEach((login,li) => {
+          if (li>0) {
+            const plus=document.createElement('span');
+            plus.style.cssText='font-size:10px;color:var(--text3);font-weight:700';
+            plus.textContent='+';
+            groupDiv.appendChild(plus);
+          }
+          const usr=state.users.find(u=>u.login===login);
+          const chip=document.createElement('span');
+          chip.className='approver-chip';
+          chip.style.cssText=group.length>1?'border-color:var(--cyan-border);color:var(--cyan)':'';
+          chip.textContent=usr?.name||login;
+          groupDiv.appendChild(chip);
+        });
+        groupsDiv.appendChild(groupDiv);
+      });
+      tdGroups.appendChild(groupsDiv);
+      tr.appendChild(tdGroups);
+      tbody.appendChild(tr);
+    });
+  });
+
+  tbl.appendChild(tbody); tableWrap.appendChild(tbl); matCard.appendChild(tableWrap);
+  div.appendChild(matCard);
+  return div;
+}
+
+// ============================================================
+// MODAL
+// ============================================================
+function renderModal() {
+  const m=state.modal;
+  const ov=document.createElement('div'); ov.className='modal-overlay';
+  ov.onclick=e=>{ if(e.target===ov){state.modal=null;render();} };
+
+  if (m.type==='reject') {
+    const box=document.createElement('div'); box.className='modal';
+    box.innerHTML=`
+      <h3>Reject PO</h3>
+      <div class="modal-desc">You are rejecting <strong>${esc(m.po.poNumber||m.po.id)}</strong>. Please provide a reason — the requester will be notified by email.</div>
+      <div class="form-group"><label>Rejection Reason</label><textarea id="reject-reason" rows="4" placeholder="Describe why this PO is being rejected…"></textarea></div>
+      <div class="modal-actions">
+        <button class="btn btn-outline" onclick="state.modal=null;render()">Cancel</button>
+        <button class="btn btn-danger" id="confirm-reject">${svgIcon('x')} Confirm Rejection</button>
+      </div>`;
+    box.querySelector('#confirm-reject').onclick=()=>{
+      const reason=box.querySelector('#reject-reason').value.trim();
+      if (!reason){toast('Please provide a rejection reason.','error');return;}
+      rejectPO(m.po,reason);
+    };
+    ov.appendChild(box);
+  }
+  return ov;
+}
+
+// ============================================================
+// API SETTINGS
+// ============================================================
+function renderApiSettings() {
+  const div = document.createElement('div');
+  div.innerHTML = `<div class="page-header"><h2>API Key</h2><p>Your Anthropic API key is used for PDF data extraction. It is stored locally in your browser only.</p></div>`;
+
+  const card = document.createElement('div'); card.className = 'card';
+
+  const hasKey = !!state.apiKey;
+  const masked = hasKey ? ('sk-ant-' + '•'.repeat(20) + state.apiKey.slice(-4)) : '';
+
+  card.innerHTML = `
+    <div style="margin-bottom:20px">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px">
+        <span style="font-size:24px">${hasKey ? '🔑' : '⚠️'}</span>
+        <div>
+          <div style="font-weight:700;font-size:15px">${hasKey ? 'API key configured' : 'No API key set'}</div>
+          <div style="font-size:12px;color:var(--text2);margin-top:2px">${hasKey ? masked : 'PDF extraction will not work until you add your key.'}</div>
+        </div>
+      </div>
+    </div>
+    <div class="form-group">
+      <label>Anthropic API Key</label>
+      <input type="password" id="api-key-input" placeholder="sk-ant-api03-..." value="${esc(state.apiKey)}" style="font-family:monospace">
+      <p style="font-size:11px;color:var(--text3);margin-top:6px">Get your key at <a href="https://console.anthropic.com/settings/keys" target="_blank" style="color:var(--blue)">console.anthropic.com</a>. The key is saved only in this browser's localStorage and never transmitted anywhere except directly to Anthropic.</p>
+    </div>
+    <div class="btn-group">
+      <button class="btn btn-primary" id="save-key-btn">Save Key</button>
+      ${hasKey ? `<button class="btn btn-outline" id="clear-key-btn" style="color:var(--red);border-color:var(--red-light)">Remove Key</button>` : ''}
+    </div>
+    ${hasKey ? `<div class="alert alert-success" style="margin-top:20px">✅ PDF extraction is active. Your key ends in <code style="font-family:monospace">...${state.apiKey.slice(-4)}</code></div>` : `<div class="alert alert-warning" style="margin-top:20px">⚠️ Without an API key, PDF upload will fail and you will need to enter PO data manually.</div>`}`;
+
+  card.querySelector('#save-key-btn').onclick = () => {
+    const val = document.getElementById('api-key-input').value.trim();
+    if (!val) { toast('Please enter an API key.','error'); return; }
+    if (!val.startsWith('sk-ant-')) { toast('This does not look like a valid Anthropic key (should start with sk-ant-).','error'); return; }
+    state.apiKey = val;
+    saveState();
+    toast('API key saved successfully!');
+    render();
+  };
+  if (hasKey) {
+    card.querySelector('#clear-key-btn').onclick = () => {
+      if (!confirm('Remove the API key? PDF extraction will stop working.')) return;
+      state.apiKey = '';
+      localStorage.removeItem('po_tool_apikey');
+      toast('API key removed.','error');
+      render();
+    };
+  }
+
+  div.appendChild(card);
+  return div;
+}
+
+// ============================================================
+// SVG ICONS
+// ============================================================
+function svgIcon(name) {
+  const paths = {
+    grid:    '<rect x="1" y="1" width="6" height="6" rx="1"/><rect x="9" y="1" width="6" height="6" rx="1"/><rect x="1" y="9" width="6" height="6" rx="1"/><rect x="9" y="9" width="6" height="6" rx="1"/>',
+    upload:  '<path d="M2 10v3a1 1 0 001 1h10a1 1 0 001-1v-3M8 2v8M5 5l3-3 3 3"/>',
+    file:    '<path d="M3 2h10a1 1 0 011 1v10a1 1 0 01-1 1H3a1 1 0 01-1-1V3a1 1 0 011-1z"/><path d="M5 6h6M5 9h6M5 12h3"/>',
+    clock:   '<circle cx="8" cy="8" r="6"/><path d="M8 5v3l2 2"/>',
+    archive: '<path d="M2 4a1 1 0 011-1h10a1 1 0 011 1v1a1 1 0 01-1 1H3a1 1 0 01-1-1V4z"/><path d="M3 6v7a1 1 0 001 1h8a1 1 0 001-1V6"/><path d="M6.5 9h3"/>',
+    users:   '<circle cx="8" cy="5" r="3"/><path d="M2 14a6 6 0 0112 0"/>',
+    settings:'<circle cx="8" cy="8" r="2"/><path d="M8 2v2M8 12v2M2 8h2M12 8h2M3.5 3.5l1.5 1.5M11 11l1.5 1.5M3.5 12.5l1.5-1.5M11 5l1.5-1.5"/>',
+    logout:  '<path d="M6 3H3a1 1 0 00-1 1v8a1 1 0 001 1h3M11 10l3-2-3-2M14 8H7"/>',
+    check:   '<path d="M2 8l4 4 8-8"/>',
+    x:       '<path d="M3 3l10 10M13 3L3 13"/>',
+    send:    '<path d="M2 8l11-5-5 11-2-4-4-2z"/>',
+    key:     '<circle cx="6" cy="10" r="3"/><path d="M9 10h6M13 8v4"/>',
+  };
+  return `<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">${paths[name]||''}</svg>`;
+}
+
+// ============================================================
+// INIT
+// ============================================================
+render();
+</script>
+</body>
+</html>
