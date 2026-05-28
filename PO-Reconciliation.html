@@ -1,0 +1,2133 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PO Reconciliation Tool</title>
+<link rel="stylesheet" href="https://unpkg.com/@tabler/icons-webfont@latest/tabler-icons.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#111318;--surface:#1c1f26;--surface2:#22262f;--surface3:#2a2e38;
+  --border:rgba(255,255,255,0.07);--border-md:rgba(255,255,255,0.12);
+  --text:#e8eaf0;--text2:#9aa0b0;--text3:#555f72;
+  --accent:#00e5a0;--accent-bg:rgba(0,229,160,0.1);--accent-text:#00e5a0;
+  --success:#00e5a0;--warn:#f5a623;--warn-bg:rgba(245,166,35,0.12);
+  --danger:#ff5a5a;--danger-bg:rgba(255,90,90,0.12);
+  --inv-bg:rgba(0,180,255,0.1);--inv-text:#00b4ff;
+  --dn-bg:rgba(180,100,255,0.1);--dn-text:#b464ff;
+  --radius:6px;--radius-sm:4px;
+}
+body{font-family:system-ui,-apple-system,sans-serif;background:var(--bg);color:var(--text);min-height:100vh;font-size:14px}
+header{background:#0d0f14;border-bottom:1px solid var(--border-md);padding:0 1.75rem;display:flex;align-items:center;height:52px;gap:.75rem;position:sticky;top:0;z-index:10}
+.logo{font-size:12px;font-weight:700;letter-spacing:0.12em;text-transform:uppercase;white-space:nowrap}
+.logo em{font-style:normal;color:var(--accent)}
+.tabs{display:flex;margin-left:auto}
+.tab-btn{background:none;border:none;border-bottom:2px solid transparent;padding:0 1.1rem;height:52px;cursor:pointer;font-size:11.5px;font-family:inherit;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--text3);transition:color .15s,border-color .15s;display:flex;align-items:center;gap:6px;white-space:nowrap}
+.tab-btn.active{color:var(--accent);border-bottom-color:var(--accent);font-weight:700}
+.tab-btn:hover:not(.active){color:var(--text)}
+.tab-content{display:none}.tab-content.active{display:block}
+
+.setup-page{max-width:780px;margin:2rem auto;padding:0 1.25rem 3rem}
+.page-title{font-size:12px;font-weight:700;letter-spacing:.15em;text-transform:uppercase;color:var(--text3);margin-bottom:12px}
+.page-sub{color:var(--text2);font-size:13px;line-height:1.6;margin-bottom:1.5rem}
+
+/* API key card */
+.apikey-card{background:var(--surface);border:1px solid var(--accent);border-radius:var(--radius);padding:.85rem 1.25rem;margin-bottom:1.25rem;display:flex;align-items:center;gap:10px;flex-wrap:wrap;box-shadow:0 0 12px rgba(0,229,160,.08)}
+.apikey-card .ak-label{font-size:11px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--accent-text);white-space:nowrap;display:flex;align-items:center;gap:6px}
+.apikey-input-wrap{flex:1;min-width:220px;position:relative}
+.apikey-input{width:100%;background:rgba(0,0,0,.3);border:1px solid var(--border-md);border-radius:var(--radius-sm);padding:7px 36px 7px 10px;font-size:13px;font-family:monospace;color:var(--accent);outline:none;letter-spacing:.06em}
+.apikey-input:focus{border-color:var(--accent);box-shadow:0 0 0 2px rgba(0,229,160,.15)}
+.apikey-toggle{position:absolute;right:8px;top:50%;transform:translateY(-50%);background:none;border:none;cursor:pointer;color:var(--text3);font-size:16px;padding:0;line-height:1}
+.apikey-toggle:hover{color:var(--text2)}
+.apikey-status{font-size:12.5px;white-space:nowrap}
+.ak-ok{color:var(--success)}.ak-bad{color:var(--danger)}
+
+/* folder cards */
+.folder-card{background:var(--surface);border:1px solid var(--border-md);border-radius:var(--radius);margin-bottom:1rem;overflow:hidden}
+.folder-card-head{padding:.75rem 1.25rem;display:flex;align-items:center;gap:10px;border-bottom:1px solid var(--border);background:var(--surface2)}
+.icon-wrap{width:32px;height:32px;border-radius:var(--radius-sm);display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:17px}
+.icon-po{background:rgba(0,229,160,.12);color:var(--accent)}
+.icon-inv{background:rgba(0,180,255,.12);color:#00b4ff}
+.icon-dn{background:rgba(180,100,255,.12);color:#b464ff}
+.card-info{flex:1}
+.card-label{font-size:11px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--text)}
+.card-sublabel{font-size:11.5px;color:var(--text3);margin-top:2px;letter-spacing:.02em}
+.folder-picker-btn{background:var(--surface3);border:1px solid var(--border-md);border-radius:var(--radius-sm);padding:5px 12px;font-size:11px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;font-family:inherit;cursor:pointer;color:var(--text2);display:flex;align-items:center;gap:6px;position:relative;transition:all .12s;flex-shrink:0}
+.folder-picker-btn:hover{background:var(--accent);border-color:var(--accent);color:#000}
+.folder-picker-btn input[type=file]{position:absolute;inset:0;opacity:0;cursor:pointer;width:100%;height:100%}
+.folder-body{padding:.75rem 1.25rem;min-height:48px;background:var(--surface)}
+.folder-empty{color:var(--text3);font-size:13px;display:flex;align-items:center;gap:6px}
+.folder-path{display:flex;align-items:center;gap:6px;margin-bottom:.55rem}
+.folder-path-text{font-size:12px;color:var(--accent);background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:3px 8px;font-family:monospace;max-width:430px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.file-grid{display:flex;flex-wrap:wrap;gap:5px}
+.file-chip{background:var(--surface2);border:1px solid var(--border);border-radius:3px;padding:2px 8px 2px 6px;font-size:11.5px;display:flex;align-items:center;gap:4px;color:var(--text2);font-family:monospace}
+.file-chip i{font-size:12px;color:var(--text3)}
+.chip-sub{font-size:11.5px;color:var(--text3)}
+.file-count{background:var(--accent-bg);color:var(--accent-text);border-radius:99px;padding:1px 9px;font-size:12px;font-weight:600;margin-right:6px}
+
+.btn-run{width:100%;background:var(--accent);color:#000;border:none;border-radius:var(--radius-sm);padding:.75rem;font-size:11.5px;font-weight:700;letter-spacing:.15em;text-transform:uppercase;font-family:inherit;cursor:pointer;margin-top:1.25rem;display:flex;align-items:center;justify-content:center;gap:8px;transition:all .15s}
+.btn-run:hover{background:#00ffb3;box-shadow:0 0 16px rgba(0,229,160,.35)}
+.btn-run:disabled{opacity:.3;cursor:not-allowed;box-shadow:none}
+
+.progress-area{margin-top:1.25rem;display:none}.progress-area.visible{display:block}
+.log-box{background:#18181b;color:#bbf7d0;border-radius:var(--radius-sm);padding:1rem;font-family:'Courier New',monospace;font-size:12.5px;line-height:1.8;max-height:220px;overflow-y:auto}
+.log-line{display:block}
+.li{color:#00e5a0}.lw{color:#f5a623}.le{color:#ff5a5a}.ld{color:#00ffb3}.ls{color:#00b4ff}
+.progress-bar-wrap{background:var(--surface3);border-radius:99px;height:5px;margin-top:.6rem;overflow:hidden}
+.progress-bar{height:100%;background:var(--accent);border-radius:0;transition:width .3s ease;width:0%;box-shadow:0 0 6px rgba(0,229,160,.5)}
+
+/* results */
+.results-page{display:flex;flex-direction:column;height:calc(100vh - 54px);padding:0;overflow:hidden}
+.results-toolbar{display:flex;align-items:center;gap:.65rem;padding:.65rem 1.25rem;flex-wrap:wrap;background:#0d0f14;border-bottom:1px solid var(--border-md);flex-shrink:0}
+.results-title{font-size:11px;font-weight:700;letter-spacing:.15em;text-transform:uppercase;color:var(--text3);flex:1}
+.filter-wrap{position:relative}
+.filter-wrap .fi{position:absolute;left:9px;top:50%;transform:translateY(-50%);font-size:14px;color:var(--text3);pointer-events:none}
+.filter-input{background:var(--surface2);border:1px solid var(--border-md);border-radius:var(--radius-sm);padding:5px 10px 5px 28px;font-size:12px;font-family:monospace;color:var(--text);width:180px;outline:none}
+.filter-input:focus{border-color:var(--accent);outline:none;box-shadow:0 0 0 2px rgba(0,229,160,.15)}
+.toolbar-btn{background:var(--surface2);border:1px solid var(--border-md);border-radius:var(--radius-sm);padding:5px 11px;font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;font-family:inherit;cursor:pointer;color:var(--text2);display:flex;align-items:center;gap:5px;transition:all .1s;white-space:nowrap}
+.toolbar-btn:hover{background:var(--surface3);border-color:var(--accent);color:var(--accent)}
+.toolbar-btn.active{background:rgba(0,229,160,.12);border-color:var(--accent);color:var(--accent)}
+.export-group{display:flex;gap:0}
+.export-group .toolbar-btn:first-child{border-radius:var(--radius-sm) 0 0 var(--radius-sm);border-right:none}
+.export-group .toolbar-btn:last-child{border-radius:0 var(--radius-sm) var(--radius-sm) 0}
+.summary-bar{display:flex;gap:.55rem;padding:.5rem 1.25rem;flex-shrink:0;flex-wrap:wrap;border-bottom:1px solid var(--border);background:#0d0f14}
+.stat-pill{background:var(--surface);border:1px solid var(--border-md);border-radius:var(--radius-sm);padding:4px 12px;display:flex;align-items:center;gap:8px}
+.stat-num{font-size:18px;font-weight:700;line-height:1;font-family:monospace}
+.stat-lbl{font-size:11px;color:var(--text3);margin-top:2px;text-transform:uppercase;letter-spacing:.08em}
+/* sticky-header table container */
+.table-outer{flex:1;overflow:auto;background:var(--surface);margin:0}
+.table-outer table{width:100%;border-collapse:collapse;font-size:13px;table-layout:fixed;min-width:1200px}
+.table-outer thead tr{background:#0d0f14}
+.table-outer th{
+  position:sticky;top:0;z-index:5;
+  background:#0d0f14;
+  padding:8px 6px 8px 6px;text-align:left;font-weight:700;font-size:11px;
+  text-transform:uppercase;letter-spacing:.08em;color:var(--text3);
+  border-bottom:1px solid var(--border-md);
+  white-space:nowrap;cursor:pointer;user-select:none;
+  overflow:visible;
+  position:relative;
+}
+.table-outer th:hover{color:var(--accent)}
+.table-outer th .si{font-size:11px;vertical-align:-1px;margin-left:2px}
+/* resizable column handle */
+.col-resizer{display:block;position:absolute;right:-3px;top:0;height:100%;width:8px;cursor:col-resize;z-index:10;background:transparent}
+.col-resizer:hover,.col-resizer.resizing{background:var(--accent);opacity:.5;border-radius:2px}
+th{position:relative}
+td{padding:7px 7px;border-bottom:1px solid var(--border);vertical-align:middle;line-height:1.4;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13px}
+tr:last-child td{border-bottom:none}
+tr:hover td{background:rgba(255,255,255,.03)}
+tr.selected td{background:rgba(0,229,160,.07) !important}
+tr.selected{outline:1px solid rgba(0,229,160,.4)}
+/* checkbox col */
+.cb-col{width:32px;text-align:center;cursor:pointer}
+.row-cb{cursor:pointer;width:14px;height:14px;accent-color:var(--accent)}
+.mono{font-family:'Courier New',monospace;font-size:12px}
+.po-num{font-weight:700}
+.file-ref{font-size:11px;color:var(--text3);display:block;margin-top:1px;font-family:'Courier New',monospace;overflow:hidden;text-overflow:ellipsis}
+.desc-cell{max-width:999px}
+.badge{display:inline-flex;align-items:center;gap:3px;padding:2px 8px;border-radius:99px;font-size:11.5px;font-weight:600;white-space:nowrap}
+.badge i{font-size:9px}
+.badge-inv{background:rgba(0,180,255,.12);color:#00b4ff;border:1px solid rgba(0,180,255,.2)}
+.badge-dn{background:rgba(180,100,255,.12);color:#b464ff;border:1px solid rgba(180,100,255,.2)}
+.badge-missing{background:rgba(245,166,35,.1);color:#f5a623;border:1px solid rgba(245,166,35,.2);font-weight:500}
+.empty-state{text-align:center;padding:4rem 2rem;color:var(--text3);letter-spacing:.05em;text-transform:uppercase;font-size:12px}
+.empty-state i{font-size:42px;margin-bottom:.75rem;display:block}
+.empty-state p{font-size:13.5px}
+/* cache panel */
+.cache-page{max-width:860px;margin:2rem auto;padding:0 1.25rem 3rem}
+.cache-section{background:var(--surface);border:1px solid var(--border-md);border-radius:var(--radius);margin-bottom:1.25rem;overflow:hidden}
+.cache-section-head{padding:.7rem 1.25rem;display:flex;align-items:center;gap:10px;border-bottom:1px solid var(--border);background:var(--surface2)}
+.cache-section-title{font-size:11px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--text2);flex:1;display:flex;align-items:center;gap:8px}
+.cache-count{background:rgba(0,229,160,.12);color:var(--accent);border-radius:3px;padding:1px 7px;font-size:11px;font-weight:700;font-family:monospace}
+.cache-actions{display:flex;gap:6px;flex-wrap:wrap}
+.cache-btn{background:var(--surface3);border:1px solid var(--border-md);border-radius:var(--radius-sm);padding:4px 10px;font-size:10.5px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;font-family:inherit;cursor:pointer;color:var(--text2);display:flex;align-items:center;gap:5px;transition:all .1s;position:relative;white-space:nowrap}
+.cache-btn:hover{background:var(--accent);border-color:var(--accent);color:#000}
+.cache-btn input[type=file]{position:absolute;inset:0;opacity:0;cursor:pointer;width:100%;height:100%}
+.cache-btn.danger:hover{background:rgba(255,90,90,.15);color:var(--danger);border-color:var(--danger)}
+.cache-body{max-height:260px;overflow-y:auto}
+.cache-table{width:100%;border-collapse:collapse;font-size:11.5px}
+.cache-table th{padding:6px 10px;text-align:left;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.1em;color:var(--text3);border-bottom:1px solid var(--border);background:#0d0f14;position:sticky;top:0}
+.cache-table td{padding:5px 10px;border-bottom:1px solid var(--border);color:var(--text2);vertical-align:middle;font-size:12px}
+.cache-table tr:last-child td{border-bottom:none}
+.cache-table tr:hover td{background:rgba(255,255,255,.03)}
+.cache-empty{padding:1.25rem;color:var(--text3);font-size:12.5px;text-align:center}
+.cache-tag{display:inline-block;padding:1px 7px;border-radius:99px;font-size:10.5px;font-weight:600}
+.tag-po{background:rgba(0,229,160,.15);color:var(--accent);border:1px solid rgba(0,229,160,.25)}
+.tag-inv{background:rgba(0,180,255,.15);color:#00b4ff;border:1px solid rgba(0,180,255,.25)}
+.tag-dn{background:rgba(180,100,255,.15);color:#b464ff;border:1px solid rgba(180,100,255,.25)}
+.cache-note{font-size:12.5px;color:var(--text2);margin-bottom:1rem;line-height:1.6;background:rgba(0,229,160,.06);border:1px solid rgba(0,229,160,.2);border-radius:var(--radius-sm);padding:.75rem 1rem}
+/* reception file card */
+.reception-card{background:var(--surface);border:1px solid var(--accent);border-radius:var(--radius);margin-bottom:1rem;overflow:hidden;box-shadow:0 0 10px rgba(0,229,160,.08)}
+.reception-card .folder-card-head{background:rgba(0,229,160,.07);border-bottom:1px solid rgba(0,229,160,.2)}
+.icon-rec{background:rgba(0,229,160,.15);color:var(--accent)}
+.rec-file-info{font-size:12px;color:var(--accent);font-family:monospace;margin-top:2px}
+/* excel export section in results */
+.excel-bar{display:flex;align-items:center;gap:.65rem;padding:.5rem 1.25rem;background:rgba(0,229,160,.06);border-bottom:1px solid rgba(0,229,160,.2);flex-shrink:0;flex-wrap:wrap}
+.excel-bar-label{font-size:10px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--accent);flex:1}
+.excel-status{font-size:11px;color:var(--text2);font-family:monospace}
+/* price match indicators */
+.pm-s{color:#00e5a0;font-weight:700}
+.pm-n{color:#ff5a5a;font-weight:700}
+.pm-blank{color:var(--text3)}
+.badge-price-ok{background:rgba(0,229,160,.12);color:#00e5a0;border:1px solid rgba(0,229,160,.2)}
+.badge-price-warn{background:rgba(255,90,90,.12);color:#ff5a5a;border:1px solid rgba(255,90,90,.3);font-weight:700}
+/* inspector */
+.insp-row{display:flex;gap:8px;margin-bottom:5px;align-items:baseline}
+.insp-lbl{font-size:9.5px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--text3);width:110px;flex-shrink:0}
+.insp-val{font-family:monospace;font-size:12px;color:var(--text);word-break:break-all}
+/* print */
+/* inspector */
+.insp-row{display:flex;gap:8px;margin-bottom:5px;align-items:baseline}
+.insp-lbl{font-size:9.5px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--text3);width:110px;flex-shrink:0}
+.insp-val{font-family:monospace;font-size:12px;color:var(--text);word-break:break-all}
+/* print */
+@media print{
+  header,.results-toolbar,.summary-bar,#empty-results{display:none!important}
+  .results-page{height:auto!important;overflow:visible!important}
+  .table-outer{overflow:visible!important;height:auto!important}
+  .table-outer table{width:100%!important;font-size:10pt}
+  .table-outer th{position:static!important;background:#eee!important;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+  tr.selected td{background:#e8f0fe!important;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+  .col-resizer{display:none}
+}
+</style>
+</head>
+<body>
+
+<header>
+  <img src="data:image/png;base64,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" alt="Optimal Group" style="height:32px;width:auto;object-fit:contain;filter:none;opacity:0.85;margin-right:4px">
+  <div style="display:flex;flex-direction:column;justify-content:center;line-height:1.1">
+    <span class="logo" style="font-size:11px;letter-spacing:.18em">PO <em style="font-style:normal;color:var(--accent)">RECONCILIATION</em></span>
+    <span style="font-size:10px;color:var(--text3);font-family:monospace;letter-spacing:.05em">BUILD 20.05.2026</span>
+  </div>
+  <nav class="tabs">
+    <button class="tab-btn active" onclick="switchTab('setup')" id="tab-setup"><i class="ti ti-settings-2" aria-hidden="true"></i> Setup</button>
+    <button class="tab-btn" onclick="switchTab('cache')" id="tab-cache"><i class="ti ti-database" aria-hidden="true"></i> Cache</button>
+    <button class="tab-btn" onclick="switchTab('results')" id="tab-results"><i class="ti ti-table" aria-hidden="true"></i> Results</button>
+  </nav>
+</header>
+
+<!-- SETUP -->
+<div class="tab-content active" id="pane-setup">
+  <div class="setup-page">
+    <h1 class="page-title">Document Reconciliation</h1>
+    <p class="page-sub">Provide your Anthropic API key, then select a folder for each document type. The tool will find every PDF inside — including sub-folders — and cross-reference PO lines against invoices and delivery notes.</p>
+
+    <!-- API KEY -->
+    <div class="apikey-card">
+      <div class="ak-label"><i class="ti ti-key" aria-hidden="true"></i> Anthropic API Key</div>
+      <div class="apikey-input-wrap">
+        <input class="apikey-input" type="password" id="api-key-input" placeholder="sk-ant-api03-…" oninput="checkKey()" autocomplete="off" spellcheck="false">
+        <button class="apikey-toggle" onclick="toggleKey()" title="Show/hide key" type="button">
+          <i class="ti ti-eye" id="eye-icon" aria-hidden="true"></i>
+        </button>
+      </div>
+      <span class="apikey-status" id="key-status"></span>
+    </div>
+
+    <!-- PO -->
+    <div class="folder-card">
+      <div class="folder-card-head">
+        <div class="icon-wrap icon-po"><i class="ti ti-file-invoice" aria-hidden="true"></i></div>
+        <div class="card-info">
+          <div class="card-label">Purchase Orders (PO)</div>
+          <div class="card-sublabel">One PO per PDF file</div>
+        </div>
+        <span class="file-count" id="count-po" style="display:none"></span>
+        <label class="folder-picker-btn">
+          <i class="ti ti-folder-open" aria-hidden="true"></i> Select folder
+          <input type="file" accept=".pdf" webkitdirectory multiple onchange="folderPicked(event,'po')">
+        </label>
+      </div>
+      <div class="folder-body" id="body-po"><div class="folder-empty"><i class="ti ti-folder" aria-hidden="true"></i> No folder selected</div></div>
+    </div>
+
+    <!-- INV -->
+    <div class="folder-card">
+      <div class="folder-card-head">
+        <div class="icon-wrap icon-inv"><i class="ti ti-receipt" aria-hidden="true"></i></div>
+        <div class="card-info">
+          <div class="card-label">Invoices (INV)</div>
+          <div class="card-sublabel">One invoice per PDF file</div>
+        </div>
+        <span class="file-count" id="count-inv" style="display:none"></span>
+        <label class="folder-picker-btn">
+          <i class="ti ti-folder-open" aria-hidden="true"></i> Select folder
+          <input type="file" accept=".pdf" webkitdirectory multiple onchange="folderPicked(event,'inv')">
+        </label>
+      </div>
+      <div class="folder-body" id="body-inv"><div class="folder-empty"><i class="ti ti-folder" aria-hidden="true"></i> No folder selected</div></div>
+    </div>
+
+    <!-- DN -->
+    <div class="folder-card">
+      <div class="folder-card-head">
+        <div class="icon-wrap icon-dn"><i class="ti ti-truck-delivery" aria-hidden="true"></i></div>
+        <div class="card-info">
+          <div class="card-label">Delivery Notes (DN)</div>
+          <div class="card-sublabel">Multiple DNs may exist within a single PDF</div>
+        </div>
+        <span class="file-count" id="count-dn" style="display:none"></span>
+        <label class="folder-picker-btn">
+          <i class="ti ti-folder-open" aria-hidden="true"></i> Select folder
+          <input type="file" accept=".pdf" webkitdirectory multiple onchange="folderPicked(event,'dn')">
+        </label>
+      </div>
+      <div class="folder-body" id="body-dn"><div class="folder-empty"><i class="ti ti-folder" aria-hidden="true"></i> No folder selected</div></div>
+    </div>
+
+    <!-- Reception File (Excel) -->
+    <div class="folder-card reception-card" id="card-rec">
+      <div class="folder-card-head">
+        <div class="icon-wrap icon-rec"><i class="ti ti-table-import" aria-hidden="true"></i></div>
+        <div class="card-info">
+          <div class="card-label" style="color:var(--accent)">Reception File (Excel)</div>
+          <div class="card-sublabel">Reference .xlsx with columns B=No Recep, C=Date, D=PO, E=DN, F=INV, G–O=PO info, P=Price match, Q=By, R=Date</div>
+        </div>
+        <span class="file-count" id="count-rec" style="display:none;background:rgba(0,229,160,.15);color:var(--accent)"></span>
+        <label class="folder-picker-btn" style="border-color:var(--accent);color:var(--accent)">
+          <i class="ti ti-file-spreadsheet" aria-hidden="true"></i> Select file
+          <input type="file" accept=".xlsx,.xls" onchange="receptionFilePicked(event)" id="input-rec">
+        </label>
+      </div>
+      <div class="folder-body" id="body-rec">
+        <div class="folder-empty"><i class="ti ti-table" aria-hidden="true"></i> No reception file selected — optional but required for Excel export</div>
+      </div>
+    </div>
+
+        <button class="btn-run" id="run-btn" onclick="runAnalysis()" disabled>
+      <i class="ti ti-cpu" aria-hidden="true"></i> Analyse &amp; Cross-Reference
+    </button>
+
+    <div class="progress-area" id="progress-area">
+      <div class="log-box" id="log-box"></div>
+      <div class="progress-bar-wrap"><div class="progress-bar" id="prog-bar"></div></div>
+    </div>
+  </div>
+</div>
+
+<!-- CACHE -->
+<div class="tab-content" id="pane-cache">
+  <div class="cache-page">
+    <h1 class="page-title" style="font-size:20px;font-weight:700;margin-bottom:4px">Extraction Cache</h1>
+    <p class="cache-note">
+      <i class="ti ti-info-circle" style="vertical-align:-2px"></i>
+      Each PDF is fingerprinted by filename + file size. When a file is recognised, the cached data is reused and the API is not called again — saving time and cost.
+      Use <strong>Export DB</strong> to save each cache as a CSV file, and <strong>Import DB</strong> to reload it later (even across browser sessions).
+      <strong>Clear</strong> removes all entries for that document type.
+    </p>
+
+    <!-- PO cache -->
+    <div class="cache-section">
+      <div class="cache-section-head">
+        <div class="cache-section-title"><span class="cache-tag tag-po">PO</span> Purchase Order Cache <span class="cache-count" id="cache-count-po">0 entries</span></div>
+        <div class="cache-actions">
+          <button class="cache-btn" onclick="exportCacheCSV('po')"><i class="ti ti-download" aria-hidden="true"></i> Export DB</button>
+          <label class="cache-btn"><i class="ti ti-upload" aria-hidden="true"></i> Import DB<input type="file" accept=".csv" onchange="importCacheCSV(event,'po')"></label>
+          <button class="cache-btn danger" onclick="clearCache('po')"><i class="ti ti-trash" aria-hidden="true"></i> Clear</button>
+        </div>
+      </div>
+      <div class="cache-body"><div id="cache-list-po" class="cache-empty">No entries cached yet.</div></div>
+    </div>
+
+    <!-- INV cache -->
+    <div class="cache-section">
+      <div class="cache-section-head">
+        <div class="cache-section-title"><span class="cache-tag tag-inv">INV</span> Invoice Cache <span class="cache-count" id="cache-count-inv">0 entries</span></div>
+        <div class="cache-actions">
+          <button class="cache-btn" onclick="exportCacheCSV('inv')"><i class="ti ti-download" aria-hidden="true"></i> Export DB</button>
+          <label class="cache-btn"><i class="ti ti-upload" aria-hidden="true"></i> Import DB<input type="file" accept=".csv" onchange="importCacheCSV(event,'inv')"></label>
+          <button class="cache-btn danger" onclick="clearCache('inv')"><i class="ti ti-trash" aria-hidden="true"></i> Clear</button>
+        </div>
+      </div>
+      <div class="cache-body"><div id="cache-list-inv" class="cache-empty">No entries cached yet.</div></div>
+    </div>
+
+    <!-- DN cache -->
+    <div class="cache-section">
+      <div class="cache-section-head">
+        <div class="cache-section-title"><span class="cache-tag tag-dn">DN</span> Delivery Note Cache <span class="cache-count" id="cache-count-dn">0 entries</span></div>
+        <div class="cache-actions">
+          <button class="cache-btn" onclick="exportCacheCSV('dn')"><i class="ti ti-download" aria-hidden="true"></i> Export DB</button>
+          <label class="cache-btn"><i class="ti ti-upload" aria-hidden="true"></i> Import DB<input type="file" accept=".csv" onchange="importCacheCSV(event,'dn')"></label>
+          <button class="cache-btn danger" onclick="clearCache('dn')"><i class="ti ti-trash" aria-hidden="true"></i> Clear</button>
+        </div>
+      </div>
+      <div class="cache-body"><div id="cache-list-dn" class="cache-empty">No entries cached yet.</div></div>
+    </div>
+  </div>
+</div>
+
+<!-- RESULTS -->
+<div class="tab-content" id="pane-results">
+  <div class="results-page">
+    <div id="empty-results" class="empty-state" style="padding:4rem 2rem">
+      <i class="ti ti-table-off" aria-hidden="true"></i>
+      <p>No results yet — run the analysis first.</p>
+    </div>
+    <div id="results-content" style="display:contents">
+      <div class="results-toolbar">
+        <span class="results-title">Reconciliation Table</span>
+        <div class="filter-wrap">
+          <i class="ti ti-search fi" aria-hidden="true"></i>
+          <input class="filter-input" type="text" placeholder="Filter rows…" id="filter-input" oninput="applyView()">
+        </div>
+        <button class="toolbar-btn" id="btn-hide-unmatched" onclick="toggleUnmatched()" title="Hide rows with no INV and no DN match">
+          <i class="ti ti-eye-off" aria-hidden="true"></i> Hide unmatched
+        </button>
+        <button class="toolbar-btn" id="btn-sel-all" onclick="selectAll()" title="Select / deselect all visible rows">
+          <i class="ti ti-checkbox" aria-hidden="true"></i> Select all
+        </button>
+        <div class="export-group">
+          <button class="toolbar-btn" onclick="exportCSV()"><i class="ti ti-file-type-csv" aria-hidden="true"></i> CSV</button>
+          <button class="toolbar-btn" onclick="printTable()"><i class="ti ti-printer" aria-hidden="true"></i> Print</button>
+        </div>
+      </div>
+      <div class="summary-bar" id="summary-bar"></div>
+      <div class="excel-bar" id="excel-bar" style="display:none">
+        <span class="excel-bar-label"><i class="ti ti-table-export" style="vertical-align:-2px"></i> Reception File Export</span>
+        <span class="excel-status" id="excel-status">No reception file loaded</span>
+        <button class="toolbar-btn" onclick="exportReceptionExcel()" id="btn-excel-export" disabled style="background:rgba(0,229,160,.15);border-color:var(--accent);color:var(--accent)">
+          <i class="ti ti-download" aria-hidden="true"></i> Export Filled Excel
+        </button>
+      </div>
+            <div class="table-outer" id="table-outer">
+        <table id="results-table">
+          <thead>
+            <tr id="col-header">
+              <th class="cb-col" onclick="selectAll()" title="Select all"><input type="checkbox" id="cb-all" class="row-cb" onclick="event.stopPropagation();selectAll()"></th>
+              <th style="width:90px">No Recep</th>
+              <th data-col="0" style="width:110px">PO Number<i class="ti ti-arrows-sort si"></i><span class="col-resizer"></span></th>
+              <th data-col="1" style="width:48px">Item<i class="ti ti-arrows-sort si"></i><span class="col-resizer"></span></th>
+              <th data-col="2" style="width:90px">Supplier Ref<i class="ti ti-arrows-sort si"></i><span class="col-resizer"></span></th>
+              <th data-col="3" style="width:200px">Description<span class="col-resizer"></span></th>
+              <th data-col="4" style="width:80px">Qty / Unit<i class="ti ti-arrows-sort si"></i><span class="col-resizer"></span></th>
+              <th data-col="5" style="width:80px">Unit Price<i class="ti ti-arrows-sort si"></i><span class="col-resizer"></span></th>
+              <th data-col="6" style="width:80px">Total<i class="ti ti-arrows-sort si"></i><span class="col-resizer"></span></th>
+              <th data-col="7" style="width:90px">Exp. Delivery<i class="ti ti-arrows-sort si"></i><span class="col-resizer"></span></th>
+              <th data-col="8" style="width:110px">INV Number<i class="ti ti-arrows-sort si"></i><span class="col-resizer"></span></th>
+              <th data-col="9" style="width:140px">INV File<span class="col-resizer"></span></th>
+              <th data-col="10" style="width:110px">DN Number<i class="ti ti-arrows-sort si"></i><span class="col-resizer"></span></th>
+              <th data-col="11" style="width:140px">DN File<span class="col-resizer"></span></th>
+              <th style="width:80px">Price</th>
+            </tr>
+          </thead>
+          <tbody id="results-tbody"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+const files={po:[],inv:[],dn:[]};
+let tableData=[], sortCol=-1, sortAsc=true;
+let receptionFile=null, receptionWorkbook=null, receptionFileName='';
+let keyVisible=false;
+
+function switchTab(t){
+  ['setup','cache','results'].forEach(x=>{
+    document.getElementById('pane-'+x).classList.toggle('active',x===t);
+    document.getElementById('tab-'+x).classList.toggle('active',x===t);
+  });
+}
+
+/* ── API Key ── */
+function getKey(){ return document.getElementById('api-key-input').value.trim(); }
+
+function checkKey(){
+  const k=getKey();
+  const st=document.getElementById('key-status');
+  if(!k){ st.textContent=''; }
+  else if(k.startsWith('sk-ant-')){ st.className='apikey-status ak-ok'; st.textContent='✓ Key format looks valid'; }
+  else { st.className='apikey-status ak-bad'; st.textContent='⚠ Key should start with sk-ant-'; }
+  checkRunnable();
+}
+
+function toggleKey(){
+  keyVisible=!keyVisible;
+  document.getElementById('api-key-input').type=keyVisible?'text':'password';
+  document.getElementById('eye-icon').className=keyVisible?'ti ti-eye-off':'ti ti-eye';
+}
+
+/* ── Folder picker ── */
+function folderPicked(e,type){
+  const all=Array.from(e.target.files);
+  let pdfs=all.filter(f=>f.name.toLowerCase().endsWith('.pdf'));
+  // For PO folder: only files whose name starts with exactly 9 digits
+  if(type==='po') pdfs=pdfs.filter(f=>/^\d{9}/.test(f.name));
+  files[type]=pdfs;
+  renderBody(type,pdfs,all,type==='po');
+  checkRunnable();
+  e.target.value='';
+}
+
+function renderBody(type,pdfs,all,filtered=false){
+  const body=document.getElementById('body-'+type);
+  const cnt=document.getElementById('count-'+type);
+  const allPdfs=all.filter(f=>f.name.toLowerCase().endsWith('.pdf'));
+  const skippedNonPdf=all.length-allPdfs.length;
+  const skippedFilter=filtered?allPdfs.length-pdfs.length:0;
+  if(!pdfs.length){
+    let msg='No matching PDFs found.';
+    if(skippedFilter) msg+=` (${skippedFilter} PDF${skippedFilter>1?'s':''} skipped — name must start with 9 digits)`;
+    else if(skippedNonPdf) msg+=` (${skippedNonPdf} non-PDF file(s) skipped)`;
+    body.innerHTML=`<div class="folder-empty"><i class="ti ti-alert-triangle" aria-hidden="true"></i> ${msg}</div>`;
+    cnt.style.display='none'; return;
+  }
+  let cntTxt=pdfs.length+' PDF'+(pdfs.length!==1?'s':'');
+  if(skippedFilter) cntTxt+=` · ${skippedFilter} skipped`;
+  cnt.textContent=cntTxt;
+  cnt.style.display='inline-block';
+  const root=(all[0]||pdfs[0]).webkitRelativePath.split('/')[0]||'(folder)';
+  let h=`<div class="folder-path"><i class="ti ti-folder-filled" style="color:var(--accent);font-size:14px" aria-hidden="true"></i><span class="folder-path-text">${esc(root)}</span></div><div class="file-grid">`;
+  pdfs.forEach(f=>{
+    const p=f.webkitRelativePath.split('/');
+    const name=p[p.length-1];
+    const sub=p.length>2?p.slice(1,-1).join('/')+'/':'';
+    h+=`<div class="file-chip"><i class="ti ti-file-type-pdf" aria-hidden="true"></i>${esc(name)}${sub?`<span class="chip-sub">${esc(sub)}</span>`:''}</div>`;
+  });
+  h+='</div>';
+  body.innerHTML=h;
+}
+
+function checkRunnable(){
+  document.getElementById('run-btn').disabled=!(getKey()&&files.po.length&&files.inv.length);
+}
+
+function receptionFilePicked(e){
+  const input=e.target;
+  const file=input.files[0];
+  if(!file){input.value='';return;}
+  receptionFileName=file.name;
+  input.value='';
+  const reader=new FileReader();
+  reader.onload=ev=>{
+    try{
+      const data=new Uint8Array(ev.target.result);
+      receptionWorkbook=XLSX.read(data,{type:'array',cellStyles:true,cellDates:true});
+      receptionFile=file;
+      const sheet=receptionWorkbook.Sheets[receptionWorkbook.SheetNames[0]];
+      const rows=XLSX.utils.sheet_to_json(sheet,{header:1,defval:''});
+      const dataRows=rows.filter(r=>r.some(c=>c!=='')).length;
+      document.getElementById('body-rec').innerHTML=
+        '<div class="folder-path">'
+        +'<i class="ti ti-file-spreadsheet" style="color:var(--accent);font-size:14px"></i>'
+        +'<span class="folder-path-text">'+esc(receptionFileName)+'</span>'
+        +'</div>'
+        +'<div style="font-size:12px;color:var(--text2);margin-top:4px">'+dataRows+' rows · '+receptionWorkbook.SheetNames.length+' sheet(s)</div>';
+      const cnt=document.getElementById('count-rec');
+      cnt.textContent=dataRows+' rows';
+      cnt.style.display='inline-block';
+      log('Reception file loaded: '+receptionFileName+' ('+dataRows+' rows)','ld');
+      updateExcelBar();
+    }catch(err){
+      alert('Could not read Excel file: '+err.message);
+      receptionWorkbook=null;
+    }
+  };
+  reader.readAsArrayBuffer(file);
+}
+
+function updateExcelBar(){
+  const bar=document.getElementById('excel-bar');
+  const status=document.getElementById('excel-status');
+  const btn=document.getElementById('btn-excel-export');
+  if(!bar) return;
+  if(!receptionWorkbook){bar.style.display='none';return;}
+  bar.style.display='flex';
+  const hasData=tableData.length>0;
+  status.textContent=receptionFileName+(hasData?' · ready to fill':' · run analysis first');
+  if(btn) btn.disabled=!hasData;
+}
+
+
+/* ── Logging ── */
+function safeLog(msg, cls='li'){
+  // Works from any tab — appends to log box if visible, silently skips if not
+  try{ log(msg, cls); }catch(e){ console.log('['+cls+']', msg); }
+}
+
+function log(msg,cls='li'){
+  const box=document.getElementById('log-box');
+  const s=document.createElement('span');
+  s.className='log-line '+cls;
+  s.textContent='['+new Date().toLocaleTimeString('en-GB',{hour12:false})+'] '+msg;
+  box.appendChild(s);
+  box.appendChild(document.createElement('br'));
+  box.scrollTop=box.scrollHeight;
+}
+function setProgress(p){document.getElementById('prog-bar').style.width=p+'%';}
+
+/* ── File reading ── */
+async function toB64(file){
+  return new Promise((res,rej)=>{
+    const r=new FileReader();
+    r.onload=()=>res(r.result.split(',')[1]);
+    r.onerror=()=>rej(new Error('File read failed: '+file.name));
+    r.readAsDataURL(file);
+  });
+}
+
+/* ── API call with full error surfacing ── */
+async function callAPI(system,content){
+  const key=getKey();
+  const res=await fetch('https://api.anthropic.com/v1/messages',{
+    method:'POST',
+    headers:{
+      'Content-Type':'application/json',
+      'x-api-key':key,
+      'anthropic-version':'2023-06-01',
+      'anthropic-dangerous-direct-browser-access':'true'
+    },
+    body:JSON.stringify({
+      model:'claude-sonnet-4-5',
+      max_tokens:8000,
+      system,
+      messages:[{role:'user',content}]
+    })
+  });
+  const raw=await res.text();
+  if(!res.ok){
+    // Show the actual API error message in the log
+    let msg=raw;
+    try{ const j=JSON.parse(raw); msg=j.error?.message||raw; }catch(e){}
+    throw new Error(`API ${res.status}: ${msg.slice(0,300)}`);
+  }
+  const data=JSON.parse(raw);
+  if(data.type==='error') throw new Error('API error: '+data.error?.message);
+  return data.content.map(b=>b.text||'').join('');
+}
+
+/* ── JSON extraction — robust parser with truncation repair ── */
+function extractJSON(text){
+  let clean=text.replace(/```json\s*/gi,'').replace(/```\s*/g,'').trim();
+  const start=clean.indexOf('{');
+  if(start===-1) throw new Error('No JSON object found. Got: '+clean.slice(0,200));
+  let fragment=clean.slice(start);
+  const end=fragment.lastIndexOf('}');
+  if(end!==-1){try{return JSON.parse(fragment.slice(0,end+1));}catch(e){}}
+  // Truncated — attempt to close open structures
+  let inStr=false,escape=false;
+  const opens=[];
+  for(let i=0;i<fragment.length;i++){
+    const c=fragment[i];
+    if(escape){escape=false;continue;}
+    if(c==='\\'){escape=true;continue;}
+    if(c==='"'){inStr=!inStr;continue;}
+    if(inStr)continue;
+    if(c==='{')opens.push('}');
+    else if(c==='[')opens.push(']');
+    else if(c==='}'||c===']')opens.pop();
+  }
+  const repaired=fragment.replace(/[,:\s"[{]*$/,'')+opens.reverse().join('');
+  try{return JSON.parse(repaired);}
+  catch(e){throw new Error('Could not parse or repair JSON: '+e.message);}
+}
+
+/* ════════════════════════════════════════════════════════════════════
+   CACHE SYSTEM
+   Key = "type:filename:size"  Value = JSON string of extracted data
+   Stored in memory (Map) during session; exportable/importable as CSV.
+   ════════════════════════════════════════════════════════════════════ */
+const cache = { po: new Map(), inv: new Map(), dn: new Map() };
+
+function cacheKey(file){
+  const name = file.webkitRelativePath || file.name;
+  return name + ':' + file.size;
+}
+
+function cacheGet(type, file){ return cache[type].get(cacheKey(file)) || null; }
+function cacheSet(type, file, data){ cache[type].set(cacheKey(file), data); renderCachePanel(type); }
+
+function renderCachePanel(type){
+  const map = cache[type];
+  const countEl = document.getElementById('cache-count-'+type);
+  const listEl  = document.getElementById('cache-list-'+type);
+  countEl.textContent = map.size + (map.size===1?' entry':' entries');
+  if(!map.size){ listEl.innerHTML='<div class="cache-empty">No entries cached yet.</div>'; return; }
+  const tagClass = {po:'tag-po',inv:'tag-inv',dn:'tag-dn'}[type];
+  let rows='';
+  for(const [key, data] of map.entries()){
+    const parts = key.split(':');
+    const size  = parts.pop();
+    const fname = parts.join(':');
+    const kb    = (parseInt(size)/1024).toFixed(0)+' KB';
+    let detail  = '';
+    try{
+      const d = typeof data === 'string' ? JSON.parse(data) : data;
+      if(type==='po')   detail = (d.po_number||'—') + ' · ' + (d.line_items||[]).length + ' lines';
+      if(type==='inv')  detail = (d.invoice_number||'—');
+      if(type==='dn')   detail = (d.delivery_notes||[]).length + ' DN(s)';
+    }catch(e){ detail='(parse error)'; }
+    // Build PO refs summary for tooltip
+    let poRefs = '';
+    try{
+      const d2 = typeof data === 'string' ? JSON.parse(data) : data;
+      const refs = [];
+      if(type==='inv')  refs.push(...(d2.po_references||[]));
+      if(type==='dn')   (d2.delivery_notes||[]).forEach(dn=>refs.push(...(dn.po_references||[])));
+      if(refs.length) poRefs = refs.join(', ');
+    }catch(e){}
+
+    const safeKey = btoa(encodeURIComponent(key)).replace(/=/g,'');
+    rows += `<tr id="crow-${safeKey}">
+      <td style="max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(fname)}">${esc(fname)}</td>
+      <td class="mono">${esc(kb)}</td>
+      <td>${esc(detail)}${poRefs?`<br><span style="font-size:10px;color:var(--inv-text)">PO refs: ${esc(poRefs)}</span>`:''}</td>
+      <td style="display:flex;gap:4px">
+        <button onclick="inspectCacheEntry('${type}','${esc(key)}')" style="background:none;border:none;cursor:pointer;color:var(--text3);font-size:13px" title="Inspect"><i class='ti ti-zoom-in'></i></button>
+        <button onclick="removeCacheEntry('${type}','${esc(key)}')" style="background:none;border:none;cursor:pointer;color:var(--text3);font-size:13px" title="Remove"><i class='ti ti-x'></i></button>
+      </td>
+    </tr>`;
+  }
+  listEl.innerHTML = `<table class="cache-table"><thead><tr><th>File</th><th>Size</th><th>Summary / PO Refs found</th><th></th></tr></thead><tbody>${rows}</tbody></table>`;
+}
+
+function removeCacheEntry(type, key){
+  cache[type].delete(key);
+  renderCachePanel(type);
+  safeLog('Removed cache entry: '+key.split('/').pop().split(':')[0],'lw');
+}
+
+function clearCache(type){
+  // Use inline confirmation button instead of confirm() which is blocked in sandboxed iframes
+  const countEl = document.getElementById('cache-count-'+type);
+  const size = cache[type].size;
+  if(!size){ return; }
+
+  // Replace the Clear button with an inline confirm
+  const btns = document.querySelectorAll('.cache-actions');
+  const typeMap = {po:0, inv:1, dn:2};
+  const actionDiv = btns[typeMap[type]];
+  if(!actionDiv) return;
+
+  const clearBtn = [...actionDiv.querySelectorAll('button')].find(b=>b.textContent.trim().startsWith('Clear'));
+  if(!clearBtn) return;
+
+  const orig = clearBtn.innerHTML;
+  clearBtn.innerHTML = '<i class="ti ti-check" aria-hidden="true"></i> Confirm?';
+  clearBtn.style.background = 'rgba(255,90,90,.25)';
+  clearBtn.style.borderColor = 'var(--danger)';
+  clearBtn.style.color = 'var(--danger)';
+
+  // One-time click handler for confirmation
+  function doConfirm(){
+    cache[type].clear();
+    renderCachePanel(type);
+    clearBtn.innerHTML = orig;
+    clearBtn.style.background = '';
+    clearBtn.style.borderColor = '';
+    clearBtn.style.color = '';
+    clearBtn.onclick = ()=>clearCache(type);
+    safeLog('Cache cleared: '+type.toUpperCase(),'lw');
+  }
+
+  // Cancel on second click elsewhere
+  function doCancel(e){
+    if(!clearBtn.contains(e.target)){
+      clearBtn.innerHTML = orig;
+      clearBtn.style.background = '';
+      clearBtn.style.borderColor = '';
+      clearBtn.style.color = '';
+      clearBtn.onclick = ()=>clearCache(type);
+      document.removeEventListener('click', doCancel);
+    }
+  }
+
+  clearBtn.onclick = (e)=>{ e.stopPropagation(); doConfirm(); document.removeEventListener('click', doCancel); };
+  setTimeout(()=>document.addEventListener('click', doCancel), 50);
+}
+
+function inspectCacheEntry(type, key){
+  const data = cache[type].get(key);
+  if(!data){ alert('Entry not found'); return; }
+  const d = typeof data==='string' ? JSON.parse(data) : data;
+
+  let html = '';
+  const parts = key.split(':'); parts.pop();
+  const fname = parts.join(':');
+  html += `<div style="font-size:11px;color:var(--text3);margin-bottom:8px;font-family:monospace">${esc(fname)}</div>`;
+
+  if(type==='po'){
+    html += `<div class="insp-row"><span class="insp-lbl">PO Number</span><span class="insp-val">${esc(d.po_number||'—')}</span></div>`;
+    html += `<div class="insp-row"><span class="insp-lbl">Supplier</span><span class="insp-val">${esc(d.supplier||'—')}</span></div>`;
+    html += `<div class="insp-row"><span class="insp-lbl">Lines</span><span class="insp-val">${(d.line_items||[]).length}</span></div>`;
+  }
+  if(type==='inv'){
+    html += `<div class="insp-row"><span class="insp-lbl">Invoice No.</span><span class="insp-val" style="color:var(--inv-text)">${esc(d.invoice_number||'—')}</span></div>`;
+    html += `<div class="insp-row"><span class="insp-lbl">PO References</span><span class="insp-val" style="color:var(--accent)">${esc((d.po_references||[]).join(', ')||'NONE FOUND')}</span></div>`;
+    html += `<div class="insp-row"><span class="insp-lbl">Supplier Refs</span><span class="insp-val">${esc((d.supplier_refs||[]).join(', ')||'—')}</span></div>`;
+    html += `<div class="insp-row"><span class="insp-lbl">Line Items</span><span class="insp-val">${(d.line_items||[]).length}</span></div>`;
+    if((d.line_items||[]).length){
+      html += '<table class="cache-table" style="margin-top:6px"><thead><tr><th>Item</th><th>Ref</th><th>Description</th><th>Qty</th><th>Unit Price</th><th>Total</th></tr></thead><tbody>';
+      (d.line_items||[]).forEach(li=>{
+        html += `<tr><td class="mono">${esc(li.item)}</td><td class="mono">${esc(li.supplier_ref)}</td><td>${esc(li.description)}</td><td>${esc(li.qty)}</td><td class="mono">${esc(li.unit_price)}</td><td class="mono">${esc(li.total)}</td></tr>`;
+      });
+      html += '</tbody></table>';
+    }
+  }
+  if(type==='dn'){
+    (d.delivery_notes||[]).forEach((dn,i)=>{
+      html += `<div style="margin-top:${i?10:0}px;padding:6px 8px;background:var(--surface2);border-radius:4px">`;
+      html += `<div class="insp-row"><span class="insp-lbl">DN Number</span><span class="insp-val" style="color:var(--dn-text)">${esc(dn.dn_number||'—')}</span></div>`;
+      html += `<div class="insp-row"><span class="insp-lbl">PO References</span><span class="insp-val" style="color:var(--accent)">${esc((dn.po_references||[]).join(', ')||'NONE FOUND')}</span></div>`;
+      html += `<div class="insp-row"><span class="insp-lbl">Supplier Refs</span><span class="insp-val">${esc((dn.supplier_refs||[]).join(', ')||'—')}</span></div>`;
+      html += `<div class="insp-row"><span class="insp-lbl">Lines</span><span class="insp-val">${(dn.line_items||[]).length}</span></div>`;
+      html += '</div>';
+    });
+  }
+
+  // Show modal
+  document.getElementById('insp-title').textContent = type.toUpperCase()+' · '+fname.split('/').pop();
+  document.getElementById('insp-body').innerHTML = html;
+  document.getElementById('insp-modal').style.display='flex';
+  document.getElementById('insp-modal').onclick=e=>{if(e.target===e.currentTarget)e.currentTarget.style.display='none';};
+}
+
+/* ── CSV export: one row per cached file, JSON stored in last column ── */
+function exportCacheCSV(type){
+  if(!cache[type].size){ alert('No '+type.toUpperCase()+' entries in cache to export.'); return; }
+  try{
+    const lines=['fingerprint,json_data'];
+    for(const [key,data] of cache[type].entries()){
+      const json = typeof data==='string' ? data : JSON.stringify(data);
+      // Escape double-quotes by doubling them, then wrap each field in quotes
+      lines.push('"'+key.replace(/"/g,'""')+'","'+json.replace(/"/g,'""')+'"');
+    }
+    const csv = lines.join('\n');
+    const blob = new Blob([csv],{type:'text/csv;charset=utf-8;'});
+    const url  = URL.createObjectURL(blob);
+    const a    = document.createElement('a');
+    a.href     = url;
+    a.download = 'cache_'+type+'_'+new Date().toISOString().slice(0,10)+'.csv';
+    a.style.display='none';
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(()=>{ document.body.removeChild(a); URL.revokeObjectURL(url); }, 1000);
+    console.log('Exported '+type.toUpperCase()+' cache: '+cache[type].size+' entries');
+  }catch(err){
+    alert('Export failed: '+err.message);
+    console.error(err);
+  }
+}
+
+/* ── CSV import: parse fingerprint + json_data columns ── */
+function importCacheCSV(event, type){
+  const input = event.target;
+  const file  = input.files[0];
+  if(!file){ input.value=''; return; }
+
+  // Reset the input immediately (before async read) so re-importing same file works
+  // We must clone the file reference first since resetting input clears files[]
+  const fileName = file.name;
+  input.value = '';
+
+  const reader = new FileReader();
+
+  reader.onload = e => {
+    try{
+      const text = e.target.result;
+      // Use the robust CSV parser — JSON values contain commas so naive split won't work
+      const records = parseCSVRobust(text);
+
+      if(records.length < 2){
+        logImport(type, 0, 0, 'File appears empty or header-only: '+fileName);
+        return;
+      }
+
+      // Validate header
+      const hdr = records[0];
+      if(!hdr[0]||!hdr[1]||
+         hdr[0].trim().toLowerCase()!=='fingerprint'||
+         hdr[1].trim().toLowerCase()!=='json_data'){
+        logImport(type, 0, 0, 'Unrecognised header in '+fileName+' — expected "fingerprint,json_data"');
+        return;
+      }
+
+      let imported=0, skipped=0, lastErr='';
+      for(let i=1;i<records.length;i++){
+        const row=records[i];
+        if(!row||row.length<2){ skipped++; continue; }
+        const fp   = (row[0]||'').trim();
+        const json = (row[1]||'').trim();
+        if(!fp||!json){ skipped++; continue; }
+        try{
+          const parsed = JSON.parse(json);
+          // Basic schema validation per type
+          if(type==='po'  && typeof parsed!=='object')  throw new Error('Not an object');
+          if(type==='inv' && typeof parsed!=='object')  throw new Error('Not an object');
+          if(type==='dn'  && !Array.isArray(parsed.delivery_notes)) throw new Error('Missing delivery_notes array');
+          cache[type].set(fp, parsed);
+          imported++;
+        }catch(e2){ lastErr=e2.message; skipped++; }
+      }
+
+      renderCachePanel(type);
+      logImport(type, imported, skipped, lastErr);
+
+    }catch(outerErr){
+      console.error('Import error:', outerErr);
+      alert('Import failed: '+outerErr.message);
+    }
+  };
+
+  reader.onerror = () => alert('Could not read file: '+fileName);
+  reader.readAsText(file, 'utf-8');
+}
+
+function logImport(type, imported, skipped, lastErr){
+  const msg = 'Imported '+type.toUpperCase()+' cache: '+imported+' loaded'
+    +(skipped?' · '+skipped+' skipped':'')
+    +(lastErr?' ('+lastErr+')':'');
+  console.log(msg);
+  // Show in log box if visible, otherwise alert
+  const logBox = document.getElementById('log-box');
+  if(logBox && logBox.offsetParent !== null){
+    log(msg, imported>0?'ld':'lw');
+  } else {
+    alert(msg);
+  }
+}
+
+/* ── Minimal RFC-4180 compliant CSV parser ── */
+function parseCSVRobust(text){
+  const records=[];
+  let row=[], field='', inQuote=false;
+  for(let i=0;i<text.length;i++){
+    const ch=text[i];
+    const next=text[i+1];
+    if(inQuote){
+      if(ch==='"'&&next==='"'){field+='"';i++;}       // escaped quote ""
+      else if(ch==='"'){inQuote=false;}               // closing quote
+      else{field+=ch;}                                // normal char inside quotes
+    } else {
+      if(ch==='"'){inQuote=true;}                     // opening quote
+      else if(ch===','){row.push(field);field='';}    // field separator
+      else if(ch==='\r'&&next==='\n'){row.push(field);records.push(row);row=[];field='';i++;}
+      else if(ch==='\n'||ch==='\r'){row.push(field);records.push(row);row=[];field='';}
+      else{field+=ch;}
+    }
+  }
+  // flush last field/row
+  if(field||row.length) {row.push(field); records.push(row);}
+  // Drop empty trailing rows
+  return records.filter(r=>r.some(f=>f.trim()));
+}
+
+/* ── Extractors (cache-aware) ── */
+async function extractPO(file){
+  const rel=file.webkitRelativePath||file.name;
+  const cached = cacheGet('po', file);
+  if(cached){ log('  PO (cached): '+rel,'ld'); return {filename:rel,...cached}; }
+  log('  PO: '+rel,'ls');
+  const b64=await toB64(file);
+  const sys=`You are a data extractor. Extract ALL line items from this purchase order PDF.
+Respond with ONLY a JSON object — no explanation, no markdown fences, no text before or after the JSON.
+Required schema:
+{"po_number":"","supplier":"","line_items":[{"item":"","supplier_ref":"","description":"","qty":"","unit_price":"","total":"","expected_delivery":""}]}
+Rules: use empty string for missing fields; qty must include unit e.g. "10 PCS"; dates as printed.`;
+  const resp=await callAPI(sys,[
+    {type:'document',source:{type:'base64',media_type:'application/pdf',data:b64}},
+    {type:'text',text:'Extract all purchase order line items. Return JSON only.'}
+  ]);
+  try{
+    const data=normalisePrices(extractJSON(resp));
+    cacheSet('po',file,data);
+    return{filename:rel,...data};
+  }catch(e){
+    log('  ⚠ Retrying PO: '+file.name,'lw');
+    const resp2=await callAPI(sys,[
+      {type:'document',source:{type:'base64',media_type:'application/pdf',data:b64}},
+      {type:'text',text:'Extract PO line items. Shorten descriptions to max 60 chars. Return JSON only.'}
+    ]);
+    const data2=extractJSON(resp2);
+    cacheSet('po',file,data2);
+    return{filename:rel,...data2};
+  }
+}
+
+async function extractINV(file){
+  const rel=file.webkitRelativePath||file.name;
+  const cached = cacheGet('inv', file);
+  if(cached){ log('  INV (cached): '+rel,'ld'); return {filename:rel,...cached}; }
+  log('  INV: '+rel,'ls');
+  const b64=await toB64(file);
+
+  // Extract any 6-13 digit sequences from the filename itself as candidate PO refs
+  const fileNameHint = (file.name||'').replace(/\.pdf$/i,'');
+  const filenameNums = (fileNameHint.match(/\d{6,13}/g)||[]);
+  const hintText = filenameNums.length
+    ? `\nIMPORTANT: The filename "${fileNameHint}" contains these number sequences: ${filenameNums.join(', ')} — these are likely PO or invoice reference numbers. Include them in po_references or as the invoice_number if they match what you see in the document.`
+    : '';
+
+  const sys=`You are a procurement document data extractor. Extract invoice data from this PDF.
+
+CRITICAL INSTRUCTIONS:
+- The PDF page may be rotated 90°, 180° or 270°. Read it in ALL orientations to find the data.
+- Look for PO/order reference numbers EVERYWHERE: headers, footers, reference fields, order tables, any field labelled "PO", "Order", "Ref", "Encomenda", "Pedido", "Nota de encomenda", "N/Ref", "V/Ref", or similar in any language.
+- Extract ALL number sequences that could be PO numbers. Our PO numbers start with "12026" followed by more digits — search especially for any number beginning with 12026 anywhere in the document.
+- If the document is in Portuguese, "Nota de Encomenda", "N.E.", "Encomenda Nº" are PO references.
+- po_references must include EVERY number that could reference a purchase order — err on the side of including more.${hintText}
+
+Respond with ONLY a JSON object — no explanation, no markdown fences, no text before or after the JSON.
+Required schema:
+{"invoice_number":"","po_references":[],"supplier_refs":[],"line_items":[{"item":"","supplier_ref":"","description":"","qty":"","unit_price":"","total":""}]}`;
+
+  const userPrompt = 'This document may be rotated. Extract all invoice data including any PO/order reference numbers. Return JSON only.';
+  const resp=await callAPI(sys,[
+    {type:'document',source:{type:'base64',media_type:'application/pdf',data:b64}},
+    {type:'text',text:userPrompt}
+  ]);
+  // Helper: post-process and cache extracted INV data
+  function finaliseINV(data){
+    normalisePrices(data);
+    if(filenameNums.length) data.po_references=[...new Set([...(data.po_references||[]),...filenameNums])];
+    injectPOCandidates(data);
+    cacheSet('inv',file,data);
+    return{filename:rel,...data};
+  }
+
+  // Attempt 1 — full extraction
+  try{
+    return finaliseINV(extractJSON(resp));
+  }catch(e1){
+    log('  ⚠ Retrying INV (attempt 2): '+file.name,'lw');
+  }
+
+  // Attempt 2 — shorter descriptions
+  const sysShort=`You are a data extractor. Extract invoice data from this PDF.
+Respond with ONLY compact JSON, no markdown.
+Keep descriptions under 40 chars. Schema:
+{"invoice_number":"","po_references":[],"supplier_refs":[],"line_items":[{"item":"","supplier_ref":"","description":"","qty":"","unit_price":"","total":""}]}
+PO numbers start with 12026.${hintText}`;
+  try{
+    const resp2=await callAPI(sysShort,[
+      {type:'document',source:{type:'base64',media_type:'application/pdf',data:b64}},
+      {type:'text',text:'Extract invoice data. Keep descriptions very short. Return JSON only.'}
+    ]);
+    return finaliseINV(extractJSON(resp2));
+  }catch(e2){
+    log('  ⚠ Retrying INV (attempt 3 — refs only): '+file.name,'lw');
+  }
+
+  // Attempt 3 — refs and prices only, no descriptions at all
+  const sysMinimal=`Extract ONLY these fields from this invoice PDF. Return compact JSON only, no markdown:
+{"invoice_number":"","po_references":[],"supplier_refs":[],"line_items":[{"item":"","supplier_ref":"","unit_price":"","total":""}]}
+Focus on: invoice number, any PO reference numbers starting with 12026, and line item prices.
+Omit descriptions entirely.${hintText}`;
+  try{
+    const resp3=await callAPI(sysMinimal,[
+      {type:'document',source:{type:'base64',media_type:'application/pdf',data:b64}},
+      {type:'text',text:'Extract invoice number, PO references, and line prices only. No descriptions. Return JSON only.'}
+    ]);
+    return finaliseINV(extractJSON(resp3));
+  }catch(e3){
+    // Last resort: return a partial object so the run doesn't abort entirely
+    log('  ✗ INV extraction failed after 3 attempts: '+file.name+' — '+e3.message,'le');
+    const fallback={invoice_number:'',po_references:filenameNums,supplier_refs:[],line_items:[]};
+    cacheSet('inv',file,fallback);
+    return{filename:rel,...fallback};
+  }
+}
+
+async function extractDN(file){
+  const rel=file.webkitRelativePath||file.name;
+  const cached = cacheGet('dn', file);
+  if(cached){ log('  DN (cached): '+rel,'ld'); return {filename:rel,delivery_notes:cached.delivery_notes||[]}; }
+  log('  DN: '+rel,'ls');
+  const b64=await toB64(file);
+  const dnFileHint = (file.name||'').replace(/\.pdf$/i,'');
+  const dnFilenameNums = (dnFileHint.match(/\d{6,13}/g)||[]);
+  const dnHint = dnFilenameNums.length
+    ? `\nThe filename "${dnFileHint}" contains: ${dnFilenameNums.join(', ')} — likely PO or DN reference numbers. Include in po_references if relevant.`
+    : '';
+
+  const sys=`You are a procurement document data extractor. This PDF may contain ONE OR MULTIPLE delivery notes. Extract all of them.
+
+CRITICAL: The PDF may be rotated. Read all orientations. Look for PO references in all languages including Portuguese ("Nota de Encomenda", "Encomenda Nº", "N.E."). Extract ALL number sequences that could be PO or DN numbers. PO numbers in our system start with "12026" — search the entire document for any number beginning with 12026.${dnHint}
+
+Respond with ONLY a JSON object — no explanation, no markdown fences, no text before or after the JSON.
+Required schema:
+{"delivery_notes":[{"dn_number":"","po_references":[],"supplier_refs":[],"line_items":[{"item":"","supplier_ref":"","description":"","qty":""}]}]}
+If only one DN exists, delivery_notes array has one element.`;
+  const resp=await callAPI(sys,[
+    {type:'document',source:{type:'base64',media_type:'application/pdf',data:b64}},
+    {type:'text',text:'Document may be rotated. Extract all delivery notes including PO references. Return JSON only.'}
+  ]);
+  function finaliseDN(parsed){
+    normalisePrices(parsed);
+    (parsed.delivery_notes||[]).forEach(dn=>{
+      if(dnFilenameNums.length) dn.po_references=[...new Set([...(dn.po_references||[]),...dnFilenameNums])];
+      injectPOCandidates(dn);
+    });
+    cacheSet('dn',file,parsed);
+    return{filename:rel,delivery_notes:parsed.delivery_notes||[]};
+  }
+
+  // Attempt 1
+  try{
+    return finaliseDN(extractJSON(resp));
+  }catch(e1){
+    log('  ⚠ Retrying DN (attempt 2): '+file.name,'lw');
+  }
+
+  // Attempt 2 — shorter descriptions
+  const sysShort2=`Extract all delivery notes from this PDF. There may be multiple. Return ONLY compact JSON.
+Keep descriptions under 40 chars. Schema:
+{"delivery_notes":[{"dn_number":"","po_references":[],"supplier_refs":[],"line_items":[{"item":"","supplier_ref":"","description":"","qty":""}]}]}
+PO numbers start with 12026.${dnHint}`;
+  try{
+    const resp2=await callAPI(sysShort2,[
+      {type:'document',source:{type:'base64',media_type:'application/pdf',data:b64}},
+      {type:'text',text:'Extract delivery notes. Short descriptions only. Return JSON only.'}
+    ]);
+    return finaliseDN(extractJSON(resp2));
+  }catch(e2){
+    log('  ⚠ Retrying DN (attempt 3 — refs only): '+file.name,'lw');
+  }
+
+  // Attempt 3 — DN numbers and PO refs only
+  const sysMinimalDN=`Extract ONLY DN numbers and PO reference numbers from this PDF. Return compact JSON only:
+{"delivery_notes":[{"dn_number":"","po_references":[],"supplier_refs":[],"line_items":[]}]}
+PO numbers start with 12026.${dnHint}`;
+  try{
+    const resp3=await callAPI(sysMinimalDN,[
+      {type:'document',source:{type:'base64',media_type:'application/pdf',data:b64}},
+      {type:'text',text:'Extract DN numbers and PO references only. Return JSON only.'}
+    ]);
+    return finaliseDN(extractJSON(resp3));
+  }catch(e3){
+    log('  ✗ DN extraction failed after 3 attempts: '+file.name+' — '+e3.message,'le');
+    const fallback={delivery_notes:[{dn_number:'',po_references:dnFilenameNums,supplier_refs:[],line_items:[]}]};
+    cacheSet('dn',file,fallback);
+    return{filename:rel,...fallback};
+  }
+}
+
+/* ── Cross-reference ── */
+
+// Scan every string value in a document object for numbers starting with 12026.
+// These are injected into po_references so the scorer can find them even when
+// the AI didn't explicitly label them as PO references.
+const PO_PREFIX_RE = /12026\d{4,8}/g;  // PO numbers: "12026" + 4-8 more digits = 9-13 total
+
+// Scan a single string for 12026XXXXX patterns (OCR-tolerant, no stripping)
+const RAW_PO_RE = /12026[\s\-]?\d[\d\s\-]{3,7}\d/g;
+function scanStringForPO(str){
+  const found = new Set();
+  const hits = str.match(RAW_PO_RE) || [];
+  hits.forEach(h => {
+    const digits = h.replace(/[\s\-]/g,'');
+    if(digits.length >= 9 && digits.length <= 13) found.add(digits);
+  });
+  return found;
+}
+
+/* extractPOCandidates — ONLY scans safe reference fields, never line item
+   fields (item numbers, supplier refs, descriptions) which may legitimately
+   contain 12026-prefixed product codes that are NOT PO numbers.            */
+function extractPOCandidates(doc){
+  const found = new Set();
+
+  // Safe fields to scan: explicit reference arrays and top-level ID fields only
+  const safeFields = [
+    ...(doc.po_references   || []),   // INV/DN: explicitly extracted PO refs
+    doc.invoice_number || '',          // INV: invoice number itself
+    doc.dn_number      || '',          // DN: delivery note number
+    doc.order_number   || '',          // any explicit order number field
+    doc.reference      || '',          // generic reference field
+    doc.our_reference  || '',
+    doc.your_reference || '',
+  ];
+
+  safeFields.forEach(v => {
+    if(typeof v === 'string') scanStringForPO(v).forEach(n => found.add(n));
+  });
+
+  // Also scan supplier_refs array (top-level, not line-item level)
+  (doc.supplier_refs || []).forEach(r => {
+    if(typeof r === 'string') scanStringForPO(r).forEach(n => found.add(n));
+  });
+
+  return [...found];
+}
+
+// Inject discovered PO candidates into a document's po_references
+function injectPOCandidates(data){
+  const candidates = extractPOCandidates(data);
+  if(candidates.length){
+    data.po_references = [...new Set([...(data.po_references||[]), ...candidates])];
+  }
+  return data;
+}
+
+function norm(s){
+  if(!s)return'';
+  return s.toString().toUpperCase()
+    // Strip common PO label prefixes (multilingual)
+    .replace(/^(PO|P\.O\.|ORDER|ENCOMENDA N[º°]?|NOTA DE ENCOMENDA|N\.E\.|PEDIDO|REF\.?|REFERENCE|V\/REF|N\/REF)[:\s#]*/,'')
+    // Remove all whitespace, punctuation, separators
+    .replace(/[\s\-_\/\.#,;:]/g,'')
+    // Strip leading zeros
+    .replace(/^0+/,'');
+}
+
+/* ── Collect all PO numbers a document explicitly references ── */
+function getDocPORefs(doc, docFilename){
+  // Explicit po_references array + deep-scan for 12026XXXXX numbers
+  const explicit = (doc.po_references||[]).map(r=>norm(r));
+  const deep     = extractPOCandidates(doc).map(r=>norm(r));
+  const all      = new Set([...explicit,...deep].filter(r=>r.length>=9));
+
+  // Also check reception file maps: if this doc's DN/INV number is mapped
+  // to a PO in the reception file, add that PO as an additional reference.
+  const dnNum  = norm(doc.dn_number||'');
+  const invNum = norm(doc.invoice_number||'');
+  if(dnNum && receptionDNtoPO.has(dnNum))   receptionDNtoPO.get(dnNum).forEach(p=>all.add(p));
+  if(invNum && receptionINVtoPO.has(invNum)) receptionINVtoPO.get(invNum).forEach(p=>all.add(p));
+
+  // Also try filename-based lookup: strip path, remove extension, try as DN or INV ref
+  if(docFilename){
+    const bare = normForMatch(docFilename.split('/').pop().replace(/\.pdf$/i,''));
+    if(receptionDNtoPO.has(bare))   receptionDNtoPO.get(bare).forEach(p=>all.add(p));
+    if(receptionINVtoPO.has(bare))  receptionINVtoPO.get(bare).forEach(p=>all.add(p));
+  }
+
+  return all;
+}
+
+/* ── Check whether a document is exclusively for a different PO ──
+   If a doc references other 12026-prefixed POs but NOT this one,
+   it cannot match — this is the core fix for the cross-PO false positive. ── */
+function docExcludesThisPO(docRefs, nPO){
+  if(!docRefs.size) return false;          // no refs found → don't exclude
+
+  // Does this doc reference THIS PO exactly?
+  const hasSelf = docRefs.has(nPO);
+  if(hasSelf) return false;                // exact match → not excluded
+
+  // Does any ref CONTAIN this PO number as a substring?
+  // Only allow this if the ref is at most 2 chars longer (e.g. "PO120260291" → 11 chars)
+  const hasSelfSubstr = [...docRefs].some(r =>
+    r.length >= 9 && r.length <= nPO.length + 2 && r.includes(nPO)
+  );
+  if(hasSelfSubstr) return false;
+
+  // Does the doc reference a DIFFERENT complete 12026 PO number?
+  const hasOther = [...docRefs].some(r => r.length >= 9 && r.startsWith('12026'));
+  return hasOther;                         // true → exclude from this PO's matches
+}
+
+function scoreMatch(line, poNum, doc, docRefs){
+  const nPO = norm(poNum);
+  if(nPO.length < 4) return 0;
+
+  // Hard exclusion: doc explicitly belongs to a different PO
+  if(docExcludesThisPO(docRefs, nPO)) return 0;
+
+  // PO reference hit check
+  const poExact   = docRefs.has(nPO);
+  // Substring only in the safe direction: doc ref contains the PO number.
+  // Never nPO.includes(r) — that would let a short fragment match every PO.
+  // Only allow substring if the ref is at most 2 chars longer than the PO number
+  // (handles "PO120260291" but not "120260291416" which is a different number)
+  const poSubstr  = !poExact && [...docRefs].some(r =>
+    r.length >= 9 && r.length <= nPO.length + 2 && r.includes(nPO)
+  );
+  const poRefHit  = poExact || poSubstr;
+
+  if(!poRefHit) return 0;
+
+  // Score: exact explicit > deep-scan exact > substring
+  const explicitRefs = (doc.po_references||[]).map(r=>norm(r));
+  const explicitExact = explicitRefs.some(r=>r===nPO);
+  let s = explicitExact ? 12 : poExact ? 9 : 7;
+
+  const nRef = norm(line.supplier_ref);
+  if(nRef.length>=3){
+    if((doc.supplier_refs||[]).some(r=>norm(r)===nRef)) s+=10;
+    if((doc.line_items||[]).some(li=>norm(li.supplier_ref)===nRef)) s+=8;
+  }
+  if(norm(line.item).length>=1 &&
+     (doc.line_items||[]).some(li=>norm(li.item)===norm(line.item))) s+=4;
+  const nd=norm(line.description);
+  if(nd.length>8 &&
+     (doc.line_items||[]).some(li=>norm(li.description).includes(nd.slice(0,10)))) s+=3;
+  return s;
+}
+
+function crossRef(poData,invData,dnData){
+  const rows=[];
+
+  // Pre-compute PO ref sets for every invoice and DN (avoids recomputing per line)
+  const invRefs = invData.map(inv=>getDocPORefs(inv, inv.filename));
+  const dnRefs  = dnData.map(df=>({
+    notes: (df.delivery_notes||[]).map(dn=>getDocPORefs(dn, df.filename))
+  }));
+
+  poData.forEach(po=>{
+    (po.line_items||[]).forEach(line=>{
+
+      // ── Invoices ──
+      const matchedInvs=[];
+      invData.forEach((inv,i)=>{
+        const sc=scoreMatch(line,po.po_number,inv,invRefs[i]);
+        if(sc>=7) matchedInvs.push({inv_number:inv.invoice_number||'',inv_file:inv.filename||'',score:sc});
+      });
+      const seenInv=new Set();
+      const uniqInvs=matchedInvs.filter(m=>{
+        const k=m.inv_number+'|'+m.inv_file;
+        if(seenInv.has(k))return false; seenInv.add(k); return true;
+      });
+
+      // ── Delivery Notes ──
+      const matchedDNs=[];
+      dnData.forEach((df,di)=>{
+        (df.delivery_notes||[]).forEach((dn,ni)=>{
+          const sc=scoreMatch(line,po.po_number,dn,dnRefs[di].notes[ni]);
+          if(sc>=7) matchedDNs.push({dn_number:dn.dn_number||'',dn_file:df.filename||'',score:sc});
+        });
+      });
+      const seenDN=new Set();
+      const uniqDNs=matchedDNs.filter(m=>{
+        const k=m.dn_number+'|'+m.dn_file;
+        if(seenDN.has(k))return false; seenDN.add(k); return true;
+      });
+
+      const base={
+        po_number:po.po_number||'',po_file:po.filename||'',
+        item:line.item||'',supplier_ref:line.supplier_ref||'',
+        description:line.description||'',qty:line.qty||'',
+        unit_price:line.unit_price||'',total:line.total||'',
+        expected_delivery:line.expected_delivery||''
+      };
+      const invList=uniqInvs.length?uniqInvs:[{inv_number:'',inv_file:''}];
+      const dnList =uniqDNs.length ?uniqDNs :[{dn_number:'',dn_file:''}];
+      const rowCount=Math.max(invList.length,dnList.length);
+      for(let i=0;i<rowCount;i++){
+        const useInv=i<invList.length?invList[i]:{inv_number:'',inv_file:''};
+        const useDN =i<dnList.length ?dnList[i] :{dn_number:'',dn_file:''};
+        // Compute price comparison for this inv match
+        let priceCmp=null;
+        if(useInv.inv_number){
+          for(const[,invData] of cache.inv.entries()){
+            const d=typeof invData==='string'?JSON.parse(invData):invData;
+            if(norm(d.invoice_number||'')!==norm(useInv.inv_number)) continue;
+
+            const items=d.line_items||[];
+            const nRef =norm(base.supplier_ref);
+            const nItem=norm(base.item);
+            const nDesc=norm(base.description||'').slice(0,10);
+
+            // 1. Try exact item number match
+            let invLine=nItem?items.find(li=>norm(li.item)===nItem):null;
+            // 2. Try supplier ref match
+            if(!invLine&&nRef.length>=3)
+              invLine=items.find(li=>norm(li.supplier_ref)===nRef);
+            // 3. Try description match
+            if(!invLine&&nDesc.length>5)
+              invLine=items.find(li=>norm(li.description||'').startsWith(nDesc));
+            // 4. Single-line invoice — safe to use directly
+            if(!invLine&&items.length===1)
+              invLine=items[0];
+            // 5. Multi-line: try price-level match — find a line whose unit_price
+            //    or total matches the PO value (identifies the right line by value)
+            if(!invLine&&items.length>1){
+              invLine=items.find(li=>{
+                const up=pricesMatch(base.unit_price,li.unit_price);
+                const tt=pricesMatch(base.total,li.total);
+                return up==='match'||tt==='match';
+              });
+            }
+            // 6. Last resort: first line (flag as uncertain but don't leave null)
+            if(!invLine&&items.length) invLine=items[0];
+
+            if(invLine) priceCmp=comparePrices(base.unit_price,base.total,invLine);
+            break;
+          }
+        }
+        rows.push({...base,
+          inv_number:useInv.inv_number, inv_file:useInv.inv_file,
+          dn_number:useDN.dn_number,   dn_file:useDN.dn_file,
+          price_status: priceCmp,   // 'match'|'mismatch'|null
+          _extra:i>0
+        });
+      }
+    });
+  });
+  return rows;
+}
+
+/* ── Main run ── */
+async function runAnalysis(){
+  const btn=document.getElementById('run-btn');
+  btn.disabled=true;
+  document.getElementById('progress-area').classList.add('visible');
+  document.getElementById('log-box').innerHTML='';
+  setProgress(0);
+  try{
+    const total=files.po.length+files.inv.length+files.dn.length;
+    let done=0;
+    const tick=()=>{done++;setProgress(Math.round(done/total*88));};
+
+    const cachedPO  = files.po.filter(f=>cacheGet('po',f)).length;
+    const cachedINV = files.inv.filter(f=>cacheGet('inv',f)).length;
+    const cachedDN  = files.dn.filter(f=>cacheGet('dn',f)).length;
+    const totalCached = cachedPO+cachedINV+cachedDN;
+    log(`Starting — ${total} file(s) | ${totalCached} from cache, ${total-totalCached} need API calls`);
+
+    log('── Purchase Orders ──');
+    const poData=[];
+    for(const f of files.po){poData.push(await extractPO(f));tick();}
+
+    log('── Invoices ──');
+    const invData=[];
+    for(const f of files.inv){invData.push(await extractINV(f));tick();}
+
+    log('── Delivery Notes ──');
+    const dnData=[];
+    for(const f of files.dn){dnData.push(await extractDN(f));tick();}
+
+    log('Cross-referencing…');
+    tableData=crossRef(poData,invData,dnData);
+    // Enrich with No Recep from reception file if loaded
+    if(receptionWorkbook) enrichWithReceptionData(tableData);
+    setProgress(98);
+
+    const baseRows=tableData.filter(r=>!r._extra);
+    const iM=baseRows.filter(r=>r.inv_number).length;
+    const dM=baseRows.filter(r=>r.dn_number).length;
+    log(`Done — ${baseRows.length} PO lines | ${iM} INV matched | ${dM} DN matched`,'ld');
+    setProgress(100);
+    renderTable(tableData);
+    switchTab('results');
+  }catch(err){
+    log('ERROR: '+err.message,'le');
+    console.error(err);
+  }finally{
+    btn.disabled=false;
+    checkRunnable();
+  }
+}
+
+function dash(){return'<span style="color:var(--text3)">—</span>';}
+
+/* Normalise a price string at extraction/storage time — removes thousands
+   separators so stored values are always clean (e.g. "1 960,00" → "1960,00").
+   This is applied to all price fields when data comes out of the AI extractor.  */
+function normalisePrice(v){
+  if(!v && v !== 0) return v;
+  if(typeof v === 'number') return v.toString();
+  let s = v.toString().trim();
+  // Normalise unicode spaces to regular space first
+  s = s.replace(/[\u00a0\u2009\u202f\u2007\u200b]/g,' ');
+  // Detect decimal separator (whichever of . or , comes last)
+  const lastDot   = s.lastIndexOf('.');
+  const lastComma = s.lastIndexOf(',');
+  const hasDot    = lastDot   >= 0;
+  const hasComma  = lastComma >= 0;
+  let decimalSep = '';
+  if(hasDot && hasComma) decimalSep = lastComma > lastDot ? ',' : '.';
+  else if(hasComma)      decimalSep = ',';
+  else if(hasDot)        decimalSep = '.';
+  if(!decimalSep){
+    // Integer or space-separated integer — remove spaces between digits
+    return s.replace(/(\d)\s+(\d)/g,'$1$2');
+  }
+  const decIdx  = decimalSep===',' ? lastComma : lastDot;
+  const intPart = s.slice(0, decIdx);
+  const decPart = s.slice(decIdx);
+  // Strip thousands separators from integer part only
+  const cleanInt = intPart.replace(/[\s.,]/g,'');
+  return cleanInt + decPart;
+}
+
+/* Recursively normalise all price fields in an extracted data object */
+function normalisePrices(obj){
+  if(!obj || typeof obj !== 'object') return obj;
+  const priceFields = ['unit_price','total','price','amount','subtotal'];
+  if(Array.isArray(obj)){
+    obj.forEach(item => normalisePrices(item));
+  } else {
+    Object.keys(obj).forEach(k => {
+      if(priceFields.includes(k)){
+        if(obj[k]) obj[k] = normalisePrice(obj[k]);
+      } else if(obj[k] && typeof obj[k] === 'object'){
+        normalisePrices(obj[k]);
+      }
+    });
+  }
+  return obj;
+}
+
+/* Normalise a price string for clean display — removes thousands separators
+   (spaces, non-breaking spaces) while preserving the decimal part.
+   e.g. "1 960,10 EUR" → "1960,10 EUR",  "1.960,10" → "1960,10"           */
+function fmtPrice(v){
+  if(!v) return v;
+  let s = v.toString().trim();
+  // Normalise unicode spaces to regular space
+  s = s.replace(/[\u00a0\u2009\u202f\u2007\u200b]/g,' ');
+
+  // Detect decimal separator (whichever of . or , comes last)
+  const lastDot   = s.lastIndexOf('.');
+  const lastComma = s.lastIndexOf(',');
+  const hasDot    = lastDot   >= 0;
+  const hasComma  = lastComma >= 0;
+
+  let decimalSep = '';
+  if(hasDot && hasComma) decimalSep = lastComma > lastDot ? ',' : '.';
+  else if(hasComma)      decimalSep = ',';
+  else if(hasDot)        decimalSep = '.';
+
+  if(!decimalSep){
+    // Integer — just remove spaces between digits
+    return s.replace(/(\d)\s+(\d)/g,'$1$2');
+  }
+
+  // Split into integer part + decimal part
+  const decIdx  = decimalSep===',' ? lastComma : lastDot;
+  const intPart = s.slice(0, decIdx);
+  const decPart = s.slice(decIdx);       // includes the separator char
+
+  // Strip thousands separators (spaces and the non-decimal punctuation) from intPart
+  const cleanInt = intPart.replace(/[\s.,]/g,'');
+  return cleanInt + decPart;
+}
+function esc(s){if(!s)return'';return s.toString().replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
+
+/* ── View state ── */
+let hideUnmatched=false;
+const selectedIds=new Set();
+
+function toggleUnmatched(){
+  hideUnmatched=!hideUnmatched;
+  document.getElementById('btn-hide-unmatched').classList.toggle('active',hideUnmatched);
+  applyView();
+}
+
+/* ── Render full table (called once after analysis) ── */
+function renderTable(data){
+  // Summary stats on unique (non-extra) rows
+  const base=data.filter(r=>!r._extra);
+  const total=base.length;
+  const iM=base.filter(r=>r.inv_number).length;
+  const dM=base.filter(r=>r.dn_number).length;
+  const full=base.filter(r=>r.inv_number&&r.dn_number).length;
+  document.getElementById('summary-bar').innerHTML=`
+    <div class="stat-pill"><div class="stat-num">${total}</div><div class="stat-lbl">PO Lines</div></div>
+    <div class="stat-pill"><div class="stat-num" style="color:var(--accent)">${iM}</div><div class="stat-lbl">Invoice matched</div></div>
+    <div class="stat-pill"><div class="stat-num" style="color:#7e22ce">${dM}</div><div class="stat-lbl">DN matched</div></div>
+    <div class="stat-pill"><div class="stat-num" style="color:var(--success)">${full}</div><div class="stat-lbl">Fully matched</div></div>
+    <div class="stat-pill"><div class="stat-num" style="color:var(--danger)">${total-full}</div><div class="stat-lbl">Partial / missing</div></div>`;
+
+  const tbody=document.getElementById('results-tbody');
+  tbody.innerHTML='';
+  selectedIds.clear();
+
+  data.forEach((r,idx)=>{
+    // Skip _extra (continuation) rows entirely — they were dimmed before, now removed
+    if(r._extra) return;
+    const tr=document.createElement('tr');
+    tr.dataset.idx=idx;
+    tr.dataset.unmatched=((!r.inv_number)&&(!r.dn_number))?'1':'0';
+    tr.addEventListener('click',e=>{
+      if(e.target.classList.contains('row-cb')) return;
+      toggleRow(tr,idx);
+    });
+    tr.innerHTML=`
+      <td class="cb-col"><input type="checkbox" class="row-cb" onchange="toggleRow(this.closest('tr'),${idx})"></td>
+      <td class="mono" style="color:var(--text2)">${esc(r.no_recep||'')}</td>
+      <td><span class="po-num mono">${esc(r.po_number)}</span><span class="file-ref">${esc(r.po_file)}</span></td>
+      <td class="mono">${esc(r.item)}</td>
+      <td class="mono">${esc(r.supplier_ref)||dash()}</td>
+      <td title="${esc(r.description)}">${esc(r.description)}</td>
+      <td class="mono">${esc(r.qty)}</td>
+      <td class="mono" style="text-align:right">${esc(fmtPrice(r.unit_price))}</td>
+      <td class="mono" style="text-align:right;font-weight:700">${esc(fmtPrice(r.total))}</td>
+      <td>${esc(r.expected_delivery)||dash()}</td>
+      <td>${r.inv_number?`<span class="badge badge-inv"><i class="ti ti-receipt" aria-hidden="true"></i>${esc(r.inv_number)}</span>`:'<span class="badge badge-missing"><i class="ti ti-alert-triangle" aria-hidden="true"></i>missing</span>'}</td>
+      <td class="mono" style="font-size:10.5px">${esc((r.inv_file||'').split('/').pop())}</td>
+      <td>${r.dn_number?`<span class="badge badge-dn"><i class="ti ti-truck-delivery" aria-hidden="true"></i>${esc(r.dn_number)}</span>`:'<span class="badge badge-missing"><i class="ti ti-alert-triangle" aria-hidden="true"></i>missing</span>'}</td>
+      <td class="mono" style="font-size:10.5px">${esc((r.dn_file||'').split('/').pop())}</td>
+      <td style="text-align:center">${
+        r.price_status==='match'    ? '<span class="badge badge-price-ok"><i class="ti ti-check" aria-hidden="true"></i>OK</span>' :
+        r.price_status==='mismatch' ? '<span class="badge badge-price-warn"><i class="ti ti-alert-triangle" aria-hidden="true"></i>&#9651;</span>' :
+        r.inv_number                ? '<span style="color:var(--text3);font-size:11px">—</span>' : ''
+      }</td>`;
+    tbody.appendChild(tr);
+  });
+
+  document.getElementById('empty-results').style.display='none';
+  document.getElementById('results-content').style.display='contents';
+  initResizers();
+  applyView();
+  updateExcelBar();
+}
+
+/* ── Apply filter + hide-unmatched without re-rendering ── */
+function applyView(){
+  const q=document.getElementById('filter-input').value.toLowerCase();
+  let visCount=0;
+  document.querySelectorAll('#results-tbody tr').forEach(tr=>{
+    const unmatched=tr.dataset.unmatched==='1';
+    const textOk=!q||tr.textContent.toLowerCase().includes(q);
+    const show=textOk&&!(hideUnmatched&&unmatched);
+    tr.style.display=show?'':'none';
+    if(show) visCount++;
+  });
+  updateSelectAllState();
+}
+
+/* ── Row selection ── */
+function toggleRow(tr,idx){
+  const cb=tr.querySelector('.row-cb');
+  if(selectedIds.has(idx)){selectedIds.delete(idx);tr.classList.remove('selected');if(cb)cb.checked=false;}
+  else{selectedIds.add(idx);tr.classList.add('selected');if(cb)cb.checked=true;}
+  updateSelectAllState();
+}
+
+function selectAll(){
+  const visRows=[...document.querySelectorAll('#results-tbody tr')].filter(r=>r.style.display!=='none');
+  const allSel=visRows.every(r=>r.classList.contains('selected'));
+  visRows.forEach(tr=>{
+    const idx=parseInt(tr.dataset.idx);
+    const cb=tr.querySelector('.row-cb');
+    if(allSel){selectedIds.delete(idx);tr.classList.remove('selected');if(cb)cb.checked=false;}
+    else{selectedIds.add(idx);tr.classList.add('selected');if(cb)cb.checked=true;}
+  });
+  updateSelectAllState();
+}
+
+function updateSelectAllState(){
+  const visRows=[...document.querySelectorAll('#results-tbody tr')].filter(r=>r.style.display!=='none');
+  const cb=document.getElementById('cb-all');
+  if(!cb||!visRows.length){if(cb)cb.indeterminate=false;return;}
+  const selCount=visRows.filter(r=>r.classList.contains('selected')).length;
+  cb.checked=selCount===visRows.length;
+  cb.indeterminate=selCount>0&&selCount<visRows.length;
+}
+
+/* ── Sort ── */
+function sortTable(col){
+  const th=document.querySelector(`th[data-col="${col}"]`);
+  if(!th) return;
+  if(sortCol===col)sortAsc=!sortAsc;else{sortCol=col;sortAsc=true;}
+  document.querySelectorAll('th .si').forEach(i=>i.className='ti ti-arrows-sort si');
+  const si=th.querySelector('.si');
+  if(si) si.className='ti '+(sortAsc?'ti-arrow-up':'ti-arrow-down')+' si';
+  const keys=['po_number','item','supplier_ref','description','qty','unit_price','total','expected_delivery','inv_number','inv_file','dn_number','dn_file'];
+  const key=keys[col];
+  if(!key) return;
+  tableData.sort((a,b)=>{
+    const va=(a[key]||'').toLowerCase();
+    const vb=(b[key]||'').toLowerCase();
+    return sortAsc?va.localeCompare(vb):vb.localeCompare(va);
+  });
+  // Re-render preserving selections
+  const prevSel=new Set(selectedIds);
+  renderTable(tableData);
+  // re-select
+  document.querySelectorAll('#results-tbody tr').forEach(tr=>{
+    if(prevSel.has(parseInt(tr.dataset.idx))) toggleRow(tr,parseInt(tr.dataset.idx));
+  });
+}
+
+/* ── Column resizing ── */
+function initResizers(){
+  document.querySelectorAll('.col-resizer').forEach(handle=>{
+    handle.addEventListener('mousedown',e=>{
+      e.preventDefault();
+      e.stopPropagation();
+      const th = handle.closest('th');
+      const table = th.closest('table');
+      const startX = e.clientX;
+      const startW = th.getBoundingClientRect().width;
+      document.body.style.cursor = 'col-resize';
+      document.body.style.userSelect = 'none';
+      handle.classList.add('resizing');
+
+      function onMove(ev){
+        const newW = Math.max(36, startW + ev.clientX - startX);
+        th.style.width = newW + 'px';
+        th.style.minWidth = newW + 'px';
+        // keep table expanding rather than squeezing other cols
+        let total = 0;
+        table.querySelectorAll('thead th').forEach(t => total += t.getBoundingClientRect().width);
+        table.style.minWidth = total + 'px';
+      }
+
+      function onUp(){
+        handle.classList.remove('resizing');
+        document.body.style.cursor = '';
+        document.body.style.userSelect = '';
+        document.removeEventListener('mousemove', onMove);
+        document.removeEventListener('mouseup', onUp);
+      }
+
+      document.addEventListener('mousemove', onMove);
+      document.addEventListener('mouseup', onUp);
+    });
+  });
+
+  // Sort on th click — but NOT when the click was on or near the resizer
+  document.querySelectorAll('th[data-col]').forEach(th=>{
+    th.addEventListener('click',e=>{
+      if(e.target.classList.contains('col-resizer')) return;
+      if(e.target.closest('.col-resizer')) return;
+      // Ignore clicks in the last 10px of the th (resizer zone)
+      const rect = th.getBoundingClientRect();
+      if(e.clientX > rect.right - 10) return;
+      sortTable(parseInt(th.dataset.col));
+    });
+  });
+}
+
+/* ── Export: get rows to export (selected, or all visible if none selected) ── */
+function getExportRows(){
+  const visRows=[...document.querySelectorAll('#results-tbody tr')].filter(r=>r.style.display!=='none');
+  const selRows=visRows.filter(r=>r.classList.contains('selected'));
+  const srcRows=selRows.length?selRows:visRows;
+  return srcRows.map(tr=>tableData[parseInt(tr.dataset.idx)]);
+}
+
+function exportCSV(){
+  const rows=getExportRows();
+  const hdr=['PO Number','PO File','Item','Supplier Ref','Description','Qty/Unit','Unit Price','Total','Expected Delivery','INV Number','INV File','DN Number','DN File'];
+  const keys=['po_number','po_file','item','supplier_ref','description','qty','unit_price','total','expected_delivery','inv_number','inv_file','dn_number','dn_file'];
+  const csv=[hdr,...rows.map(r=>keys.map(k=>`"${(r[k]||'').replace(/"/g,'""')}"`))]
+    .map(r=>r.join(',')).join('\n');
+  const blob=new Blob([csv],{type:'text/csv;charset=utf-8;'});
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement('a');
+  a.href=url; a.download='po-reconciliation.csv'; a.style.display='none';
+  document.body.appendChild(a); a.click();
+  setTimeout(()=>{ document.body.removeChild(a); URL.revokeObjectURL(url); },1000);
+}
+
+function printTable(){
+  const rows=getExportRows();
+  const hdr=['PO Number','Item','Supplier Ref','Description','Qty','Unit Price','Total','Exp. Delivery','INV Number','INV File','DN Number','DN File'];
+  const keys=['po_number','item','supplier_ref','description','qty','unit_price','total','expected_delivery','inv_number','inv_file','dn_number','dn_file'];
+  const tHead='<tr>'+hdr.map(h=>`<th>${h}</th>`).join('')+'</tr>';
+  const tBody=rows.map(r=>'<tr>'+keys.map(k=>`<td>${(r[k]||'').replace(/</g,'&lt;')}</td>`).join('')+'</tr>').join('');
+  const html=`<!DOCTYPE html><html><head><title>PO Reconciliation</title><style>
+    *{box-sizing:border-box;margin:0;padding:0}
+    body{font-family:system-ui,sans-serif;font-size:9pt;padding:1cm}
+    h2{font-size:13pt;margin-bottom:8px}
+    p.meta{font-size:8pt;color:#666;margin-bottom:12px}
+    table{width:100%;border-collapse:collapse}
+    th{background:#e8e8e8;padding:5px 4px;font-size:8pt;text-align:left;border:1px solid #ccc;font-weight:700}
+    td{padding:4px;font-size:8pt;border:1px solid #ddd;vertical-align:top}
+    tr:nth-child(even) td{background:#f9f9f9}
+  </style></head><body>
+    <h2>PO Reconciliation — ${new Date().toLocaleDateString()}</h2>
+    <p class="meta">${rows.length} line(s) printed${selectedIds.size?' (selected rows only)':' (all visible rows)'}</p>
+    <table><thead>${tHead}</thead><tbody>${tBody}</tbody></table>
+  </body></html>`;
+  const w=window.open('','_blank');
+  w.document.write(html);
+  w.document.close();
+  w.focus();
+  setTimeout(()=>w.print(),400);
+}
+
+/* ── Reception file lookup maps: built once, used during crossRef ── */
+// receptionDNtoPO: norm(dn_number) → Set of norm(po_numbers)
+// receptionINVtoPO: norm(inv_number) → Set of norm(po_numbers)
+const receptionDNtoPO  = new Map();
+const receptionINVtoPO = new Map();
+
+function buildReceptionMaps(){
+  receptionDNtoPO.clear();
+  receptionINVtoPO.clear();
+  if(!receptionWorkbook) return;
+  try{
+    const ws=receptionWorkbook.Sheets[receptionWorkbook.SheetNames[0]];
+    const rows=XLSX.utils.sheet_to_json(ws,{header:1,defval:''});
+    rows.forEach((row,i)=>{
+      if(i===0) return;
+      const poFull=(row[3]||'').toString().trim();
+      const dnVal =(row[4]||'').toString().trim(); // col E (DN)
+      const invVal=(row[5]||'').toString().trim(); // col F (INV)
+      if(!poFull) return;
+      const poNorm=normForMatch(stripPOSuffix(poFull));
+      if(dnVal){
+        const k=normForMatch(dnVal);
+        if(k){if(!receptionDNtoPO.has(k))receptionDNtoPO.set(k,new Set()); receptionDNtoPO.get(k).add(poNorm);}
+      }
+      if(invVal){
+        const k=normForMatch(invVal);
+        if(k){if(!receptionINVtoPO.has(k))receptionINVtoPO.set(k,new Set()); receptionINVtoPO.get(k).add(poNorm);}
+      }
+    });
+    log('Reception maps built: '+receptionDNtoPO.size+' DN refs, '+receptionINVtoPO.size+' INV refs','ld');
+  }catch(e){ console.warn('buildReceptionMaps error:',e); }
+}
+
+/* ── Enrich tableData rows with No Recep from the reception workbook ── */
+function enrichWithReceptionData(data){
+  if(!receptionWorkbook) return;
+  buildReceptionMaps();
+  try{
+    const ws=receptionWorkbook.Sheets[receptionWorkbook.SheetNames[0]];
+    const rows=XLSX.utils.sheet_to_json(ws,{header:1,defval:''});
+    rows.forEach((row,i)=>{
+      if(i===0) return;
+      const noRecep=row[1]||''; // col B
+      const poFull =(row[3]||'').toString().trim(); // col D
+      if(!poFull) return;
+      const poBase=normForMatch(stripPOSuffix(poFull));
+      const dotIdx=poFull.lastIndexOf('.');
+      const itemSuffix=dotIdx>=0?poFull.slice(dotIdx+1).trim():'';
+      const nSuffix=normForMatch(itemSuffix);
+      data.forEach(r=>{
+        if(normForMatch(r.po_number)!==poBase) return;
+        if(nSuffix && normForMatch(r.item)!==nSuffix) return;
+        if(noRecep) r.no_recep=noRecep.toString().trim();
+      });
+    });
+  }catch(e){ console.warn('enrichWithReceptionData error:',e); }
+}
+
+/* ════════════════════════════════════════════════════════════════════
+   RECEPTION FILE EXCEL EXPORT ENGINE
+   Reads the reference .xlsx, fills columns E (DN), F (INV), P, Q, R
+   P=S only if BOTH unit price AND line total match; P=N if either differs.
+   based on tableData, and exports the filled file.
+   ════════════════════════════════════════════════════════════════════ */
+
+function normForMatch(s){
+  if(!s&&s!==0)return'';
+  return s.toString().trim().toUpperCase().replace(/[\s\-_\/\.#,;:]/g,'').replace(/^0+/,'');
+}
+
+/* Strip ".X" suffix from PO number in column D (e.g. "120260398.2" → "120260398") */
+function stripPOSuffix(s){
+  if(!s&&s!==0)return'';
+  return s.toString().trim().replace(/\.\d+$/,'');
+}
+
+/* Find the tableData row(s) for a given PO number + item suffix */
+function findMatchingRows(poFull){
+  const poBase=normForMatch(stripPOSuffix(poFull));
+  // item suffix: the part after the dot, e.g. "120260398.2" → "2"
+  const dotIdx=poFull.toString().lastIndexOf('.');
+  const itemSuffix=dotIdx>=0?poFull.toString().slice(dotIdx+1).trim():'';
+  const nSuffix=normForMatch(itemSuffix);
+
+  return tableData.filter(r=>{
+    if(normForMatch(r.po_number)!==poBase)return false;
+    if(!nSuffix)return true;  // no suffix → match all lines for this PO
+    // try to match against line item number
+    return normForMatch(r.item)===nSuffix;
+  });
+}
+
+/* Compare two numeric/string price values.
+   Returns: 'match'    — within 0.5% tolerance (rounding)
+            'mismatch' — differs but within 20% (supplier price increase)
+            'exceeds'  — variation > 20% (likely wrong line, ignore match)
+            null       — no numeric data to compare                          */
+function pricesMatch(a,b){
+  if((a===''||a===null||a===undefined)&&a!==0) return null;
+  if((b===''||b===null||b===undefined)&&b!==0) return null;
+
+  const parseNum=v=>{
+    let s=v.toString().trim();
+    // 1. Strip currency symbols and letter codes (EUR, USD, etc.) anywhere in string
+    s=s.replace(/[€$£]/g,'');
+    s=s.replace(/[A-Za-z]+/g,'').trim();
+    // 2. Normalise ALL space variants (regular, non-breaking U+00A0, thin U+2009,
+    //    narrow no-break U+202F, figure space U+2007) to a plain space
+    s=s.replace(/[\u00a0\u2009\u202f\u2007\u200b]/g,' ').trim();
+    // 3. Detect number format:
+    //    European: 1.960,00  → dot=thousands, comma=decimal
+    //    Anglo:    1,960.00  → comma=thousands, dot=decimal
+    //    Space:    1 960,00  → space=thousands, comma or dot=decimal
+    const hasDot   = s.includes('.');
+    const hasComma = s.includes(',');
+    if(hasDot && hasComma){
+      // Whichever separator comes LAST is the decimal separator
+      const lastDot   = s.lastIndexOf('.');
+      const lastComma = s.lastIndexOf(',');
+      if(lastComma > lastDot){
+        // European format: 1.960,00 or 1 960,00
+        s=s.replace(/[.\s]/g,'').replace(',','.');
+      } else {
+        // Anglo format: 1,960.00 or 1 960.00
+        s=s.replace(/[,\s]/g,'');
+      }
+    } else if(hasComma){
+      const parts=s.replace(/\s/g,'').split(',');
+      if(parts.length===2 && parts[1].length<=2){
+        // Decimal comma: 1960,00
+        s=s.replace(/\s/g,'').replace(',','.');
+      } else {
+        // Thousands comma: 1,960
+        s=s.replace(/[,\s]/g,'');
+      }
+    } else if(hasDot){
+      const parts=s.replace(/\s/g,'').split('.');
+      if(parts.length===2 && parts[1].length<=2){
+        // Decimal dot: 1960.00
+        s=s.replace(/\s/g,'');
+      } else {
+        // Thousands dot: 1.960
+        s=s.replace(/[.\s]/g,'');
+      }
+    } else {
+      // Plain integer or space-separated: 1 960
+      s=s.replace(/\s/g,'');
+    }
+    const n=parseFloat(s);
+    return isNaN(n)?null:n;
+  };
+
+  const na=parseNum(a), nb=parseNum(b);
+  if(na===null||nb===null) return normForMatch(a)===normForMatch(b)?'match':null;
+  if(Math.abs(na-nb)<0.01) return 'match';           // within rounding (1 cent)
+  const base=Math.max(Math.abs(na),Math.abs(nb),0.001);
+  const variation=Math.abs(na-nb)/base;
+  if(variation<=0.20) return 'mismatch';             // ≤20% → price increase
+  return 'exceeds';                                  // >20% → probably wrong line
+}
+
+/* Compute overall price comparison for a PO line vs invoice line.
+   Returns: 'match' | 'mismatch' | null
+
+   Strategy: unit price is the most reliable signal — invoices often include
+   VAT in the total while POs are net. So:
+   - If unit prices match → 'match' (sufficient on its own)
+   - If unit prices mismatch but totals match → 'match'
+   - If unit price matches but total doesn't → still 'match' (VAT difference)
+   - If neither matches within 20% → 'mismatch'
+   - If >20% on both → null (wrong line)                                     */
+function comparePrices(poPrice, poTotal, invLine){
+  const upResult  = pricesMatch(poPrice, invLine.unit_price);
+  const totResult = pricesMatch(poTotal, invLine.total);
+
+  // No data at all
+  if(upResult===null && totResult===null) return null;
+
+  // Unit price matches → always 'match' regardless of total
+  // (totals may differ due to VAT, rounding, or qty differences)
+  if(upResult==='match') return 'match';
+
+  // Total matches → 'match'
+  if(totResult==='match') return 'match';
+
+  // Neither matched exactly — check if one side simply has no data
+  if(upResult===null  && totResult!=='exceeds') return totResult;
+  if(totResult===null && upResult !=='exceeds') return upResult;
+
+  // Both exceeded 20% → wrong line pairing, ignore
+  if(upResult==='exceeds' && totResult==='exceeds') return null;
+
+  // At least one is 'mismatch' within 20%
+  return 'mismatch';
+}
+
+async function exportReceptionExcel(){
+  if(!receptionWorkbook||!tableData.length){
+    alert('Please load a reception file and run the analysis first.');
+    return;
+  }
+
+  const btn=document.getElementById('btn-excel-export');
+  btn.disabled=true;
+  btn.innerHTML='<i class="ti ti-loader-2" aria-hidden="true"></i> Processing…';
+
+  try{
+    // Clone workbook to avoid mutating the original
+    const wbData=XLSX.write(receptionWorkbook,{bookType:'xlsx',type:'array'});
+    const wb=XLSX.read(wbData,{type:'array',cellStyles:true,cellDates:true});
+    const sheetName=wb.SheetNames[0];
+    const ws=wb.Sheets[sheetName];
+    const range=XLSX.utils.decode_range(ws['!ref']||'A1');
+
+    const today=new Date();
+    const todayStr=today.toLocaleDateString('pt-PT');  // DD/MM/YYYY
+    let filled=0, priceChecked=0;
+
+    // Iterate all data rows (skip header row 1, index 0)
+    for(let row=range.s.r+1;row<=range.e.r;row++){
+      // Read PO number from column D (index 3)
+      const colD=XLSX.utils.encode_cell({r:row,c:3});
+      const poCell=ws[colD];
+      if(!poCell||!poCell.v)continue;
+      const poFull=poCell.v;
+
+      // Find matching rows in our analysis data
+      const matches=findMatchingRows(poFull);
+      if(!matches.length)continue;
+
+      // Use first match for single-value fills; join multiples
+      const invNumbers=[...new Set(matches.filter(r=>r.inv_number).map(r=>r.inv_number))];
+      const invFiles  =[...new Set(matches.filter(r=>r.inv_file).map(r=>r.inv_file))];
+      const dnNumbers =[...new Set(matches.filter(r=>r.dn_number).map(r=>r.dn_number))];
+
+      // ── Column E: DN number ──
+      if(dnNumbers.length){
+        const cellE=XLSX.utils.encode_cell({r:row,c:4});
+        ws[cellE]={t:'s',v:dnNumbers.join(', ')};
+        filled++;
+      }
+
+      // ── Column F: INV number ──
+      if(invNumbers.length){
+        const cellF=XLSX.utils.encode_cell({r:row,c:5});
+        ws[cellF]={t:'s',v:invNumbers.join(', ')};
+      }
+
+      // ── Columns P/Q/R: price match ──
+      // Strategy: collect price_status from ALL matched tableData rows,
+      // then take the best result. A single 'match' is enough to write S.
+      // This means: if INV OR DN is found and price matches → S.
+      // Per spec: only one document needs to match.
+
+      // Step 1: gather all non-null price_status values from matched rows
+      const priceStatuses = matches
+        .map(r => r.price_status)
+        .filter(s => s !== null && s !== undefined);
+
+      // Step 2: pick best — 'match' beats 'mismatch'
+      let priceResult = null;
+      if(priceStatuses.includes('match'))    priceResult = 'match';
+      else if(priceStatuses.includes('mismatch')) priceResult = 'mismatch';
+
+      // Step 3: if tableData had no price_status (e.g. cache was cleared after
+      // crossRef), fall back to re-checking cache directly
+      if(priceResult === null){
+        const m = matches[0];
+        const poPrice = m.unit_price;
+        const poTotal = m.total;
+        const nSupRef = normForMatch(m.supplier_ref||'');
+        const dotIdx  = poFull.toString().lastIndexOf('.');
+        const nSuffix = dotIdx>=0 ? normForMatch(poFull.toString().slice(dotIdx+1)) : '';
+
+        function findBestLine(lineItems){
+          if(!lineItems||!lineItems.length) return null;
+          if(nSuffix){
+            const exact = lineItems.find(li=>normForMatch(li.item||'')===nSuffix);
+            if(exact) return exact;
+          }
+          if(nSupRef.length>=3){
+            const byRef = lineItems.find(li=>normForMatch(li.supplier_ref||'')===nSupRef);
+            if(byRef) return byRef;
+          }
+          const nd = normForMatch(m.description||'');
+          if(nd.length>6){
+            const byDesc = lineItems.find(li=>normForMatch(li.description||'').includes(nd.slice(0,8)));
+            if(byDesc) return byDesc;
+          }
+          // Single-line invoice/DN — safe to use
+          if(lineItems.length===1) return lineItems[0];
+          // Multi-line: use first line as last resort (may be wrong, but better than null)
+          return lineItems[0];
+        }
+
+        // Try all matched INV numbers
+        for(const invName of [...new Set(matches.filter(r=>r.inv_number).map(r=>r.inv_number))]){
+          for(const[,invCached] of cache.inv.entries()){
+            const d = typeof invCached==='string' ? JSON.parse(invCached) : invCached;
+            if(norm(d.invoice_number||'')===norm(invName)){
+              const line = findBestLine(d.line_items||[]);
+              if(line){
+                const r = comparePrices(poPrice, poTotal, line);
+                if(r==='match'){ priceResult='match'; break; }
+                if(r==='mismatch') priceResult='mismatch';
+              }
+              break;
+            }
+          }
+          if(priceResult==='match') break;
+        }
+
+        // Try all matched DN numbers if still no match result
+        if(priceResult!=='match'){
+          for(const dnName of [...new Set(matches.filter(r=>r.dn_number).map(r=>r.dn_number))]){
+            for(const[,dnCached] of cache.dn.entries()){
+              const d = typeof dnCached==='string' ? JSON.parse(dnCached) : dnCached;
+              const dn=(d.delivery_notes||[]).find(n=>norm(n.dn_number||'')===norm(dnName));
+              if(dn){
+                const line = findBestLine(dn.line_items||[]);
+                if(line){
+                  const r = comparePrices(poPrice, poTotal, line);
+                  if(r==='match'){ priceResult='match'; break; }
+                  if(r==='mismatch') priceResult='mismatch';
+                }
+                break;
+              }
+            }
+            if(priceResult==='match') break;
+          }
+        }
+      }
+
+      // ── Always write P/Q/R when we have any result ──
+      if(priceResult!==null){
+        const cellP = XLSX.utils.encode_cell({r:row, c:15});
+        const cellQ = XLSX.utils.encode_cell({r:row, c:16});
+        const cellR = XLSX.utils.encode_cell({r:row, c:17});
+        const isMatch = priceResult==='match';
+        ws[cellP] = {t:'s', v: isMatch ? 'S' : 'N'};
+        ws[cellQ] = {t:'s', v: isMatch ? 'Claude' : 'Price Mismatch'};
+        ws[cellR] = {t:'s', v: todayStr};
+        priceChecked++;
+      }
+    }
+
+    // Extend sheet range if needed (to cover columns up to R = index 17)
+    const newEnd=Math.max(range.e.c,17);
+    ws['!ref']=XLSX.utils.encode_range({s:range.s,e:{r:range.e.r,c:newEnd}});
+
+    // Build output filename: original name + "_C" + DDMMYYYY
+    const dd=String(today.getDate()).padStart(2,'0');
+    const mm=String(today.getMonth()+1).padStart(2,'0');
+    const yyyy=today.getFullYear();
+    const baseName=receptionFileName.replace(/\.xlsx?$/i,'');
+    const outName=`${baseName}_C${dd}${mm}${yyyy}.xlsx`;
+
+    // Export
+    const outData=XLSX.write(wb,{bookType:'xlsx',type:'array'});
+    const blob=new Blob([outData],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
+    const url=URL.createObjectURL(blob);
+    const a=document.createElement('a');
+    a.href=url; a.download=outName; a.style.display='none';
+    document.body.appendChild(a); a.click();
+    setTimeout(()=>{document.body.removeChild(a);URL.revokeObjectURL(url);},1000);
+
+    document.getElementById('excel-status').textContent=
+      `Exported: ${outName} · ${filled} DN/INV filled · ${priceChecked} price checks`;
+    log(`Excel exported: ${outName} — ${filled} rows filled, ${priceChecked} price checks`,'ld');
+
+  }catch(err){
+    log('Excel export error: '+err.message,'le');
+    alert('Export failed: '+err.message);
+    console.error(err);
+  }finally{
+    btn.disabled=false;
+    btn.innerHTML='<i class="ti ti-download" aria-hidden="true"></i> Export Filled Excel';
+  }
+}
+</script>
+
+<!-- Cache inspector modal -->
+<div id="insp-modal" style="display:none;position:fixed;inset:0;z-index:999;align-items:center;justify-content:center;background:rgba(0,0,0,.7)">
+  <div style="background:var(--surface);border:1px solid var(--border-md);border-radius:var(--radius);width:min(820px,95vw);max-height:80vh;display:flex;flex-direction:column;overflow:hidden">
+    <div style="padding:.75rem 1.25rem;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:10px;background:var(--surface2)">
+      <i class="ti ti-zoom-in" style="color:var(--accent)"></i>
+      <span id="insp-title" style="font-size:11px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;flex:1"></span>
+      <button onclick="document.getElementById('insp-modal').style.display='none'" style="background:none;border:none;cursor:pointer;color:var(--text3);font-size:16px"><i class="ti ti-x"></i></button>
+    </div>
+    <div id="insp-body" style="padding:1rem;overflow-y:auto;font-size:12px"></div>
+  </div>
+</div>
+
+</body>
+</html>
