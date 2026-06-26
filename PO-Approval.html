@@ -319,36 +319,179 @@ let state = {
   reviewSource: null,
   reviewPdfB64: null,
   reviewPdfName: null,
+  ghSyncing: false,
+  _ghSha: null,
   apiKey: '',
 };
 
 // ---- Persistence (localStorage) ----
+// ============================================================
+// GITHUB STORAGE BACKEND
+// ============================================================
+const GH_DATA_FILE = 'po_data.json'; // path in repo
+
+function getGHConfig() {
+  return {
+    token: localStorage.getItem('po_gh_token') || '',
+    owner: localStorage.getItem('po_gh_owner') || '',
+    repo:  localStorage.getItem('po_gh_repo')  || '',
+    branch:localStorage.getItem('po_gh_branch')|| 'main',
+  };
+}
+function saveGHConfig(token, owner, repo, branch) {
+  localStorage.setItem('po_gh_token',  token);
+  localStorage.setItem('po_gh_owner',  owner);
+  localStorage.setItem('po_gh_repo',   repo);
+  localStorage.setItem('po_gh_branch', branch||'main');
+}
+function ghConfigured() {
+  const c = getGHConfig();
+  return !!(c.token && c.owner && c.repo);
+}
+
+// Build GitHub API URL for the data file
+function ghApiUrl() {
+  const c = getGHConfig();
+  return `https://api.github.com/repos/${c.owner}/${c.repo}/contents/${GH_DATA_FILE}`;
+}
+function ghHeaders() {
+  return {
+    'Authorization': `token ${getGHConfig().token}`,
+    'Content-Type':  'application/json',
+    'Accept':        'application/vnd.github.v3+json',
+  };
+}
+
+// Fetch latest data from GitHub — returns { data, sha } or null
+async function ghFetch() {
+  if (!ghConfigured()) return null;
+  try {
+    const r = await fetch(ghApiUrl() + `?ref=${getGHConfig().branch}&t=${Date.now()}`, {
+      headers: ghHeaders(),
+    });
+    if (r.status === 404) return { data: null, sha: null }; // file doesn't exist yet
+    if (!r.ok) { console.error('[GH] Fetch failed:', r.status, await r.text()); return null; }
+    const json = await r.json();
+    const content = JSON.parse(atob(json.content.replace(/\n/g,'')));
+    return { data: content, sha: json.sha };
+  } catch(e) {
+    console.error('[GH] Fetch error:', e);
+    return null;
+  }
+}
+
+// Write data to GitHub — sha required for updates (null for first create)
+async function ghWrite(data, sha) {
+  if (!ghConfigured()) return false;
+  try {
+    const body = {
+      message: `PO Tool data update — ${new Date().toISOString()}`,
+      content: btoa(unescape(encodeURIComponent(JSON.stringify(data, null, 2)))),
+      branch:  getGHConfig().branch,
+    };
+    if (sha) body.sha = sha;
+    const r = await fetch(ghApiUrl(), {
+      method:  'PUT',
+      headers: ghHeaders(),
+      body:    JSON.stringify(body),
+    });
+    if (!r.ok) { console.error('[GH] Write failed:', r.status, await r.text()); return false; }
+    const json = await r.json();
+    // Cache the new SHA so next write doesn't need to re-fetch
+    state._ghSha = json.content.sha;
+    console.log('[GH] Data saved, sha:', state._ghSha);
+    return true;
+  } catch(e) {
+    console.error('[GH] Write error:', e);
+    return false;
+  }
+}
+
+// ---- State load/save ----------------------------------------
 function loadState() {
   try {
+    // Load from localStorage cache first (fast, works offline)
     const s = JSON.parse(localStorage.getItem('po_tool_optimal') || '{}');
     state.users   = s.users   || JSON.parse(JSON.stringify(INITIAL_USERS));
     state.pos     = s.pos     || [];
     state.archive = s.archive || [];
     state.apiKey  = localStorage.getItem('po_tool_apikey') || '';
+    state._ghSha  = s._ghSha  || null;
 
-    // Migration: add any new users from INITIAL_USERS that don't exist in saved state
+    // Migration: add any new users from INITIAL_USERS
     INITIAL_USERS.forEach(iu => {
       if (!state.users.find(u => u.id === iu.id || u.login === iu.login)) {
         state.users.push({...iu});
       }
     });
-
   } catch(e) {
     state.users = JSON.parse(JSON.stringify(INITIAL_USERS));
     state.pos = []; state.archive = [];
   }
 }
+
 function saveState() {
+  // Always save to localStorage immediately (fast local cache)
   try {
-    localStorage.setItem('po_tool_optimal', JSON.stringify({users:state.users,pos:state.pos,archive:state.archive}));
+    localStorage.setItem('po_tool_optimal', JSON.stringify({
+      users: state.users, pos: state.pos, archive: state.archive, _ghSha: state._ghSha
+    }));
     if (state.apiKey) localStorage.setItem('po_tool_apikey', state.apiKey);
   } catch(e) {}
+
+  // Also push to GitHub if configured (async, non-blocking)
+  if (ghConfigured()) {
+    ghPush().catch(e => console.error('[GH] Push error:', e));
+  }
 }
+
+// Push current state to GitHub
+async function ghPush() {
+  const data = { users: state.users, pos: state.pos, archive: state.archive };
+  // If we don't have a SHA yet, fetch it first
+  if (!state._ghSha) {
+    const fetched = await ghFetch();
+    if (fetched) state._ghSha = fetched.sha;
+  }
+  const ok = await ghWrite(data, state._ghSha);
+  if (!ok) {
+    // SHA conflict — re-fetch and retry once
+    const fetched = await ghFetch();
+    if (fetched) {
+      state._ghSha = fetched.sha;
+      await ghWrite(data, state._ghSha);
+    }
+  }
+}
+
+// Pull latest data from GitHub and merge into state
+async function ghPull() {
+  if (!ghConfigured()) return false;
+  state.ghSyncing = true; render();
+  const result = await ghFetch();
+  state.ghSyncing = false;
+  if (!result || !result.data) return false;
+  const d = result.data;
+  state.users   = d.users   || state.users;
+  state.pos     = d.pos     || state.pos;
+  state.archive = d.archive || state.archive;
+  state._ghSha  = result.sha;
+  // Migrate new users
+  INITIAL_USERS.forEach(iu => {
+    if (!state.users.find(u => u.id === iu.id || u.login === iu.login)) {
+      state.users.push({...iu});
+    }
+  });
+  // Update local cache
+  try {
+    localStorage.setItem('po_tool_optimal', JSON.stringify({
+      users: state.users, pos: state.pos, archive: state.archive, _ghSha: state._ghSha
+    }));
+  } catch(e) {}
+  console.log('[GH] Pulled latest data, sha:', state._ghSha);
+  return true;
+}
+
 loadState();
 
 // ---- Helpers ----
@@ -525,9 +668,21 @@ function doLogin() {
   const pass  = document.getElementById('lp')?.value;
   const user  = state.users.find(u=>u.login===login&&u.pass===pass);
   if (!user) { document.getElementById('login-err').innerHTML='<div class="alert alert-error">Invalid username or password.</div>'; return; }
+
   state.loggedIn = true; state.currentUser = user; state.page = 'dashboard';
   state.reviewData = null; state.reviewItems = []; state.modal = null;
-  render();
+
+  // Pull latest data from GitHub before showing the app
+  if (ghConfigured()) {
+    render(); // show loading state
+    ghPull().then(ok => {
+      if (ok) toast('Synced with GitHub ✓');
+      else toast('GitHub sync failed — using local data', 'error', 5000);
+      render();
+    });
+  } else {
+    render();
+  }
 }
 
 // ============================================================
@@ -547,6 +702,7 @@ function renderApp() {
     <div class="topbar-sep"></div>
     <div class="topbar-user">Logged in as <strong>${esc(u.login)}</strong></div>
     <div class="topbar-right">
+      ${ghConfigured()?`<button onclick="manualSync()" style="background:transparent;border:1px solid var(--border);color:var(--text2);padding:5px 10px;border-radius:var(--radius);cursor:pointer;font-family:var(--font);font-size:10px;letter-spacing:0.06em;text-transform:uppercase">${state.ghSyncing?"⟳ Syncing…":"⟳ Sync"}</button>`:""}
       <img src="data:image/png;base64,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" style="height:70px;width:auto;border-radius:4px" alt="Optimal Group">
     </div>`;
   wrap.appendChild(topbar);
@@ -571,6 +727,7 @@ function renderApp() {
         ${pendingCount()?`<span style="margin-left:auto;background:var(--amber);color:#0f1117;border-radius:2px;padding:0 5px;font-size:9px;font-weight:700">${pendingCount()}</span>`:''}
       </a>
       <a onclick="nav('archive')" class="${state.page==='archive'?'active':''}">${svgIcon('archive')} Archive</a>
+      <a onclick="nav('changepassword')" class="${state.page==='changepassword'?'active':''}">${svgIcon('key')} Change Password</a>
       ${isAdmin?`<div class="nav-section">Admin</div>
       <a onclick="nav('users')" class="${state.page==='users'?'active':''}">${svgIcon('users')} Users</a>
       <a onclick="nav('parameters')" class="${state.page==='parameters'?'active':''}">${svgIcon('settings')} Parameters</a>
@@ -581,7 +738,7 @@ function renderApp() {
 
   // --- Main content ---
   const main = document.createElement('div'); main.className = 'main';
-  const pages = { dashboard:renderDashboard, upload:renderUpload, review:renderReviewForm, pos:renderPOList, pending:renderPending, 'po-detail':renderPODetail, archive:renderArchive, users:renderUsers, parameters:renderParameters, apisettings:renderApiSettings };
+  const pages = { dashboard:renderDashboard, upload:renderUpload, review:renderReviewForm, pos:renderPOList, pending:renderPending, 'po-detail':renderPODetail, archive:renderArchive, users:renderUsers, parameters:renderParameters, apisettings:renderApiSettings, changepassword:renderChangePassword };
   const pageFn = pages[state.page] || renderDashboard;
   main.appendChild(pageFn());
   body.appendChild(main);
@@ -595,6 +752,12 @@ function renderApp() {
 
 function nav(page) { state.page=page; state.modal=null; render(); }
 function doLogout() { state.loggedIn=false; state.currentUser=null; state.reviewData=null; state.modal=null; render(); }
+async function manualSync() {
+  if (state.ghSyncing) return;
+  const ok = await ghPull();
+  if (ok) { toast('Synced with GitHub ✓'); render(); }
+  else toast('GitHub sync failed — check config in Admin → API Key', 'error', 5000);
+}
 
 // ============================================================
 // DASHBOARD
@@ -1161,29 +1324,52 @@ function renderPODetail() {
   }
 
   // Action buttons
-  const actDiv=document.createElement('div'); actDiv.className='btn-group'; actDiv.style.marginBottom='24px';
+  const actDiv=document.createElement('div'); actDiv.style.marginBottom='24px';
   if (po.status==='draft'&&isRequester) {
-    const b=document.createElement('button'); b.className='btn btn-blue';
-    b.innerHTML=`${svgIcon('send')} Request Approval`;
-    b.onclick=()=>requestApproval(po); actDiv.appendChild(b);
+    // Notes field + request button
+    const requestPanel = document.createElement('div');
+    requestPanel.style.cssText='background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius-lg);padding:18px;max-width:600px';
+    requestPanel.innerHTML=`
+      <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.1em;color:var(--cyan);margin-bottom:12px">Request Approval</div>
+      <div class="form-group" style="margin-bottom:14px">
+        <label>Notes for Approvers <span style="color:var(--text3);font-weight:400;text-transform:none;letter-spacing:0">(optional)</span></label>
+        <textarea id="approval-notes" rows="3" placeholder="Add any context or instructions for the approvers — this will be included in the approval request email…" style="font-size:12px;line-height:1.6"></textarea>
+      </div>
+      <button class="btn btn-blue" id="req-approval-btn">${svgIcon('send')} Send Approval Request</button>`;
+    requestPanel.querySelector('#req-approval-btn').onclick = () => {
+      const notes = requestPanel.querySelector('#approval-notes').value.trim();
+      requestApproval(po, notes);
+    };
+    actDiv.appendChild(requestPanel);
   }
   if (po.status==='pending'&&canApprove) {
     const groups = getApprovalGroups(po.company, po.approvalLevel);
     const needsJoint = groups.some(g => g.length > 1 && g.includes(u.login));
     const alreadyApproved = (po.approvals||[]).includes(u.login);
+
+    // Show requester notes if any
+    if (po.requestNotes) {
+      const notesDiv = document.createElement('div');
+      notesDiv.style.cssText='background:var(--surface2);border:1px solid var(--border);border-left:3px solid var(--cyan);border-radius:var(--radius);padding:12px 16px;margin-bottom:14px;max-width:600px';
+      notesDiv.innerHTML=`<div style="font-size:9px;text-transform:uppercase;letter-spacing:0.1em;color:var(--cyan);font-weight:700;margin-bottom:6px">Notes from requester</div><div style="font-size:12px;color:var(--text2);line-height:1.6">${esc(po.requestNotes)}</div>`;
+      actDiv.appendChild(notesDiv);
+    }
+
+    const btnGroup = document.createElement('div'); btnGroup.style.cssText='display:flex;gap:10px;flex-wrap:wrap';
     if (!alreadyApproved) {
       const ba=document.createElement('button'); ba.className='btn btn-success';
       ba.innerHTML=`${svgIcon('check')} ${needsJoint ? 'Record My Approval' : 'Approve PO'}`;
-      ba.onclick=()=>approvePO(po); actDiv.appendChild(ba);
+      ba.onclick=()=>approvePO(po); btnGroup.appendChild(ba);
       const br=document.createElement('button'); br.className='btn btn-danger';
       br.innerHTML=`${svgIcon('x')} Reject PO`;
-      br.onclick=()=>{ state.modal={type:'reject',po}; render(); }; actDiv.appendChild(br);
+      br.onclick=()=>{ state.modal={type:'reject',po}; render(); }; btnGroup.appendChild(br);
     } else {
       const done=document.createElement('div');
       done.style.cssText='font-size:11px;color:var(--green);padding:8px 12px;border:1px solid var(--green-border);border-radius:var(--radius);background:var(--green-dim)';
       done.textContent='✓ You have already approved this PO. Waiting for other required approvers.';
-      actDiv.appendChild(done);
+      btnGroup.appendChild(done);
     }
+    actDiv.appendChild(btnGroup);
   }
   div.appendChild(actDiv);
 
@@ -1200,11 +1386,12 @@ function renderPODetail() {
   return div;
 }
 
-function requestApproval(po) {
+function requestApproval(po, notes) {
   po.status      = 'pending';
   po.requestedAt = new Date().toISOString();
-  po.approvals   = []; // track individual approvals for joint-approval support
-  addEvent('requested', po.id, state.currentUser.id, `Approval requested — Level ${po.approvalLevel}, ${fmtCurrency(po.total,po.currency)}`);
+  po.approvals   = [];
+  po.requestNotes = notes || '';
+  addEvent('requested', po.id, state.currentUser.id, `Approval requested — Level ${po.approvalLevel}, ${fmtCurrency(po.total,po.currency)}${notes ? ' — Notes: '+notes : ''}`);
 
   const approverLogins = getApproverLogins(po.company, po.approvalLevel);
   const approvers      = getUsersByLogins(approverLogins);
@@ -1217,9 +1404,9 @@ function requestApproval(po) {
     saveState(); render(); return;
   }
 
-  const groups         = getApprovalGroups(po.company, po.approvalLevel);
-  const groupDesc      = groups.map(g => g.map(l => state.users.find(u=>u.login===l)?.name||l).join(' + ')).join('  OR  ');
-  const requester      = state.currentUser;
+  const groups    = getApprovalGroups(po.company, po.approvalLevel);
+  const groupDesc = groups.map(g => g.map(l => state.users.find(u=>u.login===l)?.name||l).join(' + ')).join('  OR  ');
+  const requester = state.currentUser;
 
   approvers.forEach(a => {
     const msg =
@@ -1238,12 +1425,13 @@ Requested by: ${requester.name} (${requester.email})
 Date        : ${fmtDateTime(po.requestedAt)}
 
 Required approvers: ${groupDesc}
-
+${notes ? `\nNotes from requester:\n${notes}\n` : ''}
 Please log in to the PO Approval Tool to review and approve or reject this PO.
 
 — PO Approval Tool · OPTIMAL Group`;
     sendEmail(a.email, `PO Approval Required: ${po.poNumber||po.id}`, msg, po.id);
   });
+
   saveState();
   toast(`Approval request sent to ${approvers.length} approver(s).`);
   render();
@@ -1399,12 +1587,22 @@ async function approvePO(po) {
 
     addEvent('approved', po.id, u.id, `PO fully approved. Approvers: ${approvedNames}`);
 
+    // Build recipient list: requester + all potential approvers for this company/level
     const req = state.users.find(x => x.id === po.requestedBy);
-    if (req) {
-      const msg =
-`Dear ${req.name},
+    const approverLogins = getApproverLogins(po.company, po.approvalLevel);
+    const allApprovers   = getUsersByLogins(approverLogins);
 
-Your Purchase Order has been APPROVED.
+    // Collect all unique recipients (requester + all approvers)
+    const recipients = [];
+    if (req) recipients.push(req);
+    allApprovers.forEach(a => { if (!recipients.find(r => r.id === a.id)) recipients.push(a); });
+
+    recipients.forEach(recipient => {
+      const isRequester = recipient.id === po.requestedBy;
+      const msg =
+`Dear ${recipient.name},
+
+Purchase Order ${po.poNumber||po.id} has been APPROVED.
 
 PO Number   : ${po.poNumber||po.id}
 Company     : ${po.company}
@@ -1414,16 +1612,13 @@ Amount      : ${fmtCurrency(po.total, po.currency)}
 
 Approved by : ${approvedNames}
 Approved on : ${fmtDateTime(po.approvedAt)}
-
-The approved PO with APPROVED watermark is ready for download.
-Please log in to the PO Approval Tool, open this PO and click
-"Download Approved PDF" to retrieve the stamped document.
-
+${isRequester ? `\nThe approved PO with APPROVED watermark is ready for download.\nPlease log in to the PO Approval Tool, open this PO and click\n"Download Approved PDF" to retrieve the stamped document.` : ''}
 — PO Approval Tool · OPTIMAL Group`;
-      sendEmail(req.email, `✅ PO Approved: ${po.poNumber||po.id}`, msg, po.id);
-    }
+      sendEmail(recipient.email, `✅ PO Approved: ${po.poNumber||po.id}`, msg, po.id);
+    });
+
     saveState();
-    toast('PO fully approved! Confirmation email sent.');
+    toast(`PO fully approved! Confirmation sent to ${recipients.length} recipient(s).`);
   } else {
     // Partial approval — notify remaining approvers in the same group
     const groups   = getApprovalGroups(po.company, po.approvalLevel);
@@ -1745,8 +1940,128 @@ function renderModal() {
 // ============================================================
 function renderApiSettings() {
   const div = document.createElement('div');
-  div.innerHTML = `<div class="page-header"><h2>API Key</h2><p>Your Anthropic API key is used for PDF data extraction. It is stored locally in your browser only.</p></div>`;
+  div.innerHTML = `<div class="page-header"><h2>API Key & Email Settings</h2><p>Configure your Anthropic API key and test email delivery.</p></div>`;
 
+  // ── EmailJS test card ──────────────────────────────────────
+  const ejCard = document.createElement('div'); ejCard.className = 'card'; ejCard.style.marginBottom = '20px';
+  ejCard.innerHTML = `
+    <div style="font-size:12px;font-weight:700;margin-bottom:12px;color:var(--cyan);text-transform:uppercase;letter-spacing:0.06em">EmailJS Connection Test</div>
+    <p style="font-size:11px;color:var(--text2);margin-bottom:14px;line-height:1.7">Use these buttons to diagnose email delivery issues.</p>
+    <div style="display:flex;gap:10px;flex-wrap:wrap">
+      <button class="btn btn-outline btn-sm" id="test-reach-btn">🔌 Test Network Reach</button>
+      <button class="btn btn-outline btn-sm" id="test-send-btn">📧 Send Test Email</button>
+    </div>
+    <div id="ej-result" style="margin-top:14px"></div>`;
+
+  ejCard.querySelector('#test-reach-btn').onclick = async () => {
+    const res = document.getElementById('ej-result');
+    res.innerHTML = '<div class="alert alert-info">Testing connection to api.emailjs.com…</div>';
+    try {
+      // Send intentionally invalid payload — any HTTP response means server is reachable
+      const r = await fetch('https://api.emailjs.com/api/v1.0/email/send', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ service_id:'x', template_id:'x', user_id:'x', template_params:{} }),
+      });
+      res.innerHTML = `<div class="alert alert-success">✓ EmailJS server is reachable (HTTP ${r.status} — ${await r.text()}). Network is not the issue — check your EmailJS account configuration.</div>`;
+    } catch(err) {
+      res.innerHTML = `<div class="alert alert-error">✗ Cannot reach api.emailjs.com: <strong>${err.message}</strong><br><br>
+        Your browser or server is blocking outbound requests to EmailJS.<br>
+        Try opening <a href="https://api.emailjs.com" target="_blank" style="color:var(--red-light)">https://api.emailjs.com</a> directly to confirm.<br>
+        If that also fails, contact your hosting provider about outbound HTTPS restrictions.
+      </div>`;
+    }
+  };
+
+  ejCard.querySelector('#test-send-btn').onclick = async () => {
+    const res = document.getElementById('ej-result');
+    res.innerHTML = '<div class="alert alert-info">Sending test email to POApproval@optimal.pt…</div>';
+    try {
+      const r = await emailjs.send(EMAILJS_SERVICE_ID, EMAILJS_TEMPLATE_ID, {
+        to_email: 'POApproval@optimal.pt',
+        subject:  'PO Approval Tool — Connection Test',
+        message:  `This is a test email.\n\nSent by: ${state.currentUser?.name||'unknown'}\nTime: ${new Date().toLocaleString('en-GB')}`,
+      });
+      res.innerHTML = `<div class="alert alert-success">✓ Test email sent successfully! Check POApproval@optimal.pt inbox. (Status: ${r.status} ${r.text})</div>`;
+    } catch(err) {
+      const detail = err?.text || err?.message || JSON.stringify(err);
+      res.innerHTML = `<div class="alert alert-error">✗ Send failed: <strong>${detail}</strong></div>`;
+    }
+  };
+
+  div.appendChild(ejCard);
+
+  // ── GitHub Storage config card ─────────────────────────────
+  const ghCard = document.createElement('div'); ghCard.className = 'card'; ghCard.style.marginBottom = '20px';
+  const ghCfg = getGHConfig();
+  const ghOk  = ghConfigured();
+  ghCard.innerHTML = `
+    <div style="font-size:12px;font-weight:700;margin-bottom:12px;color:var(--cyan);text-transform:uppercase;letter-spacing:0.06em">GitHub Shared Storage</div>
+    <p style="font-size:11px;color:var(--text2);margin-bottom:16px;line-height:1.7">Connect to a GitHub repository to share PO data across all users. All changes are synced automatically.</p>
+    ${ghOk ? '<div class="alert alert-success" style="margin-bottom:14px">✓ GitHub storage is configured and active.</div>' : '<div class="alert alert-warning" style="margin-bottom:14px">⚠ GitHub storage not configured — data is local only.</div>'}
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:14px">
+      <div class="form-group" style="margin:0"><label>GitHub Username / Org</label><input id="gh-owner" placeholder="e.g. optimal-group" value="${esc(ghCfg.owner)}"></div>
+      <div class="form-group" style="margin:0"><label>Repository Name</label><input id="gh-repo" placeholder="e.g. po-approval-tool" value="${esc(ghCfg.repo)}"></div>
+      <div class="form-group" style="margin:0"><label>Branch</label><input id="gh-branch" placeholder="main" value="${esc(ghCfg.branch||'main')}"></div>
+      <div class="form-group" style="margin:0"><label>Personal Access Token (PAT)</label><input type="password" id="gh-token" placeholder="ghp_xxxxxxxxxxxx" value="${esc(ghCfg.token)}"></div>
+    </div>
+    <p style="font-size:10px;color:var(--text3);margin-bottom:14px;line-height:1.6">Create a PAT at <a href="https://github.com/settings/tokens" target="_blank" style="color:var(--cyan)">github.com/settings/tokens</a> → Generate new token (classic) → tick <strong>repo</strong> scope.</p>
+    <div style="display:flex;gap:8px;flex-wrap:wrap">
+      <button class="btn btn-primary btn-sm" id="gh-save-btn">Save & Test Connection</button>
+      ${ghOk?'<button class="btn btn-outline btn-sm" id="gh-push-btn">⬆ Push Local Data to GitHub</button>':''}
+      ${ghOk?'<button class="btn btn-outline btn-sm" id="gh-pull-btn">⬇ Pull Latest from GitHub</button>':''}
+    </div>
+    <div id="gh-result" style="margin-top:14px"></div>`;
+
+  ghCard.querySelector('#gh-save-btn').onclick = async () => {
+    const owner  = ghCard.querySelector('#gh-owner').value.trim();
+    const repo   = ghCard.querySelector('#gh-repo').value.trim();
+    const branch = ghCard.querySelector('#gh-branch').value.trim() || 'main';
+    const token  = ghCard.querySelector('#gh-token').value.trim();
+    const res    = document.getElementById('gh-result');
+    if (!owner||!repo||!token) { res.innerHTML='<div class="alert alert-error">All fields are required.</div>'; return; }
+    saveGHConfig(token, owner, repo, branch);
+    res.innerHTML='<div class="alert alert-info">Testing connection…</div>';
+    // Test by fetching repo info
+    try {
+      const r = await fetch(`https://api.github.com/repos/${owner}/${repo}`, {
+        headers: { 'Authorization': `token ${token}`, 'Accept': 'application/vnd.github.v3+json' }
+      });
+      if (r.ok) {
+        res.innerHTML='<div class="alert alert-success">✓ Connected successfully! Pushing current data to GitHub…</div>';
+        await ghPush();
+        res.innerHTML='<div class="alert alert-success">✓ Connected and data pushed to GitHub. All users will now share the same data.</div>';
+        toast('GitHub storage configured!'); render();
+      } else {
+        const t = await r.text();
+        res.innerHTML=`<div class="alert alert-error">✗ Connection failed (${r.status}): ${t}</div>`;
+      }
+    } catch(e) {
+      res.innerHTML=`<div class="alert alert-error">✗ Network error: ${e.message}</div>`;
+    }
+  };
+
+  if (ghOk) {
+    ghCard.querySelector('#gh-push-btn').onclick = async () => {
+      const res = document.getElementById('gh-result');
+      res.innerHTML='<div class="alert alert-info">Pushing data to GitHub…</div>';
+      const ok = await ghPush();
+      res.innerHTML = ok ? '<div class="alert alert-success">✓ Data pushed to GitHub successfully.</div>'
+                         : '<div class="alert alert-error">✗ Push failed — check console for details.</div>';
+    };
+    ghCard.querySelector('#gh-pull-btn').onclick = async () => {
+      const res = document.getElementById('gh-result');
+      res.innerHTML='<div class="alert alert-info">Pulling latest data from GitHub…</div>';
+      const ok = await ghPull();
+      res.innerHTML = ok ? '<div class="alert alert-success">✓ Latest data pulled from GitHub.</div>'
+                         : '<div class="alert alert-error">✗ Pull failed — check console for details.</div>';
+      if (ok) render();
+    };
+  }
+
+  div.appendChild(ghCard);
+
+  // ── Anthropic API Key card ─────────────────────────────────
   const card = document.createElement('div'); card.className = 'card';
 
   const hasKey = !!state.apiKey;
@@ -1791,6 +2106,83 @@ function renderApiSettings() {
       render();
     };
   }
+
+  div.appendChild(card);
+  return div;
+}
+
+// ============================================================
+// CHANGE PASSWORD
+// ============================================================
+function renderChangePassword() {
+  const u = state.currentUser;
+  const div = document.createElement('div');
+  div.innerHTML = `<div class="page-header"><h2>Change Password</h2><p>Update your login password. You will need to use the new password on your next login.</p></div>`;
+
+  const card = document.createElement('div'); card.className = 'card'; card.style.maxWidth = '420px';
+  card.innerHTML = `
+    <div style="margin-bottom:20px;display:flex;align-items:center;gap:12px">
+      <div style="width:40px;height:40px;border-radius:var(--radius);background:var(--cyan-dim);border:1px solid var(--cyan-border);display:flex;align-items:center;justify-content:center;font-size:18px">🔒</div>
+      <div>
+        <div style="font-size:13px;font-weight:700;color:var(--text);text-transform:uppercase;letter-spacing:0.04em">${esc(u.name)}</div>
+        <div style="font-size:10px;color:var(--text3);margin-top:2px">@${esc(u.login)}</div>
+      </div>
+    </div>
+    <div class="form-group">
+      <label>Current Password</label>
+      <input type="password" id="cp-current" placeholder="Enter your current password" autocomplete="current-password">
+    </div>
+    <div class="form-group">
+      <label>New Password</label>
+      <input type="password" id="cp-new" placeholder="Enter new password" autocomplete="new-password">
+    </div>
+    <div class="form-group">
+      <label>Confirm New Password</label>
+      <input type="password" id="cp-confirm" placeholder="Repeat new password" autocomplete="new-password">
+    </div>
+    <div id="cp-msg"></div>
+    <button class="btn btn-primary" id="cp-save">Update Password</button>`;
+
+  card.querySelector('#cp-save').onclick = () => {
+    const current = card.querySelector('#cp-current').value;
+    const newPass  = card.querySelector('#cp-new').value;
+    const confirm  = card.querySelector('#cp-confirm').value;
+    const msgEl    = card.querySelector('#cp-msg');
+    msgEl.innerHTML = '';
+
+    if (!current || !newPass || !confirm) {
+      msgEl.innerHTML = '<div class="alert alert-error">All fields are required.</div>'; return;
+    }
+    if (current !== u.pass) {
+      msgEl.innerHTML = '<div class="alert alert-error">Current password is incorrect.</div>'; return;
+    }
+    if (newPass.length < 6) {
+      msgEl.innerHTML = '<div class="alert alert-error">New password must be at least 6 characters.</div>'; return;
+    }
+    if (newPass !== confirm) {
+      msgEl.innerHTML = '<div class="alert alert-error">New passwords do not match.</div>'; return;
+    }
+    if (newPass === current) {
+      msgEl.innerHTML = '<div class="alert alert-error">New password must be different from current password.</div>'; return;
+    }
+
+    // Update password in state
+    const userInState = state.users.find(x => x.id === u.id);
+    if (userInState) userInState.pass = newPass;
+    state.currentUser.pass = newPass;
+    saveState();
+
+    msgEl.innerHTML = '<div class="alert alert-success">✓ Password updated successfully.</div>';
+    card.querySelector('#cp-current').value = '';
+    card.querySelector('#cp-new').value = '';
+    card.querySelector('#cp-confirm').value = '';
+    toast('Password updated successfully.');
+  };
+
+  // Allow Enter key on last field
+  card.querySelector('#cp-confirm').addEventListener('keydown', e => {
+    if (e.key === 'Enter') card.querySelector('#cp-save').click();
+  });
 
   div.appendChild(card);
   return div;
