@@ -248,7 +248,6 @@ const INITIAL_USERS = [
   { id:'u6',     login:'bruno.carvalho', pass:'bruno.carvalhoASC',       name:'Bruno Carvalho',  email:'bruno.carvalhotest@optimal.pt',  role:'user',  levels:[] },
   { id:'u7',     login:'ivo.costa',      pass:'ivo.costaOPTIMAL',        name:'Ivo Costa',       email:'ivo.costatest@optimal.pt',       role:'user',  levels:[] },
   { id:'u8',     login:'joao.ferreira',  pass:'joao.ferreiraOPTIMAL',    name:'Joao Ferreira',   email:'joao.ferreiratest@optimal.pt',   role:'user',  levels:[] },
-  { id:'u9',     login:'joao.pinto',     pass:'joao.pintoOPTIMAL',       name:'Joao Pinto',      email:'joao.pintotest@optimal.pt',      role:'user',  levels:[] },
 ];
 
 // ── Approval level thresholds ────────────────────────────────────────────────
@@ -289,14 +288,14 @@ const APPROVAL_MATRIX = {
     3: [['celeste.pereira','antonio.reis','manuel.torres']],
   },
   'OPTIMAL HIGH VOLUME': {
-    1: [['jorge.subtil'], ['joao.pinto'], ['antonio.reis'], ['manuel.torres']],
+    1: [['jorge.subtil'], ['antonio.reis'], ['manuel.torres']],
     2: [['antonio.reis'], ['manuel.torres']],
     3: [['antonio.reis','manuel.torres']],
   },
   'OPTIMAL MARINE': {
     1: [['jorge.subtil'], ['antonio.reis'], ['manuel.torres']],
-    2: [['joao.pinto','antonio.reis'], ['joao.pinto','manuel.torres'], ['antonio.reis','manuel.torres']],
-    3: [['joao.pinto','antonio.reis','manuel.torres']],
+    2: [['antonio.reis','manuel.torres']],
+    3: [['antonio.reis','manuel.torres']],
   },
   'ATLANTIC SPACEPORT CONSORTIUM': {
     1: [['bruno.carvalho','antonio.reis','manuel.torres']],
@@ -545,10 +544,15 @@ function loadState() {
     state.apiKey  = localStorage.getItem('po_tool_apikey') || '';
     state._ghSha  = s._ghSha  || null;
 
-    // Only add truly new users from INITIAL_USERS — never overwrite existing ones
+    // Only add INITIAL_USERS entries completely absent from saved state
+    // If a user was deleted (not in saved state and not in saved IDs), don't re-add them
+    const savedIds = state.users.map(u => u.id);
+    const savedLogins = state.users.map(u => u.login);
     INITIAL_USERS.forEach(iu => {
-      if (!state.users.find(u => u.id === iu.id || u.login === iu.login)) {
-        state.users.push({...iu});
+      if (!savedIds.includes(iu.id) && !savedLogins.includes(iu.login)) {
+        // Only add if localStorage has no users at all (fresh install)
+        // If localStorage has users but this one is missing, it was deleted — respect that
+        if (!s.users || s.users.length === 0) state.users.push({...iu});
       }
     });
   } catch(e) {
@@ -621,11 +625,15 @@ async function ghPull() {
   state.archive = d.archive || state.archive;
   state._ghSha  = result.sha;
 
-  // Only add truly missing users from INITIAL_USERS (new ones added in code)
-  // Do NOT overwrite email/login/name — those may have been edited by admin
+  // Only add INITIAL_USERS entries that are completely absent from GitHub data
+  // AND whose id is not in the GitHub users list (meaning they were never deleted there)
+  const ghUserIds = (d.users||[]).map(u => u.id);
+  const ghUserLogins = (d.users||[]).map(u => u.login);
   INITIAL_USERS.forEach(iu => {
-    const exists = state.users.find(u => u.id === iu.id || u.login === iu.login);
-    if (!exists) state.users.push({...iu}); // only add if completely absent
+    // Only add if absent from both id and login in the pulled data
+    const inGH = ghUserIds.includes(iu.id) || ghUserLogins.includes(iu.login);
+    const inState = state.users.find(u => u.id === iu.id || u.login === iu.login);
+    if (!inGH && !inState) state.users.push({...iu});
   });
 
   // Update local cache
