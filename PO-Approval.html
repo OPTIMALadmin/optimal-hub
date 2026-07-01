@@ -329,6 +329,7 @@ let state = {
 // GITHUB STORAGE BACKEND
 // ============================================================
 const GH_DATA_FILE = 'po_data.json'; // path in repo
+const GH_PDF_FOLDER = 'pdfs';        // folder for approved PDFs
 
 function getGHConfig() {
   return {
@@ -349,10 +350,9 @@ function ghConfigured() {
   return !!(c.token && c.owner && c.repo);
 }
 
-// Build GitHub API URL for the data file
-function ghApiUrl() {
+function ghApiUrl(path) {
   const c = getGHConfig();
-  return `https://api.github.com/repos/${c.owner}/${c.repo}/contents/${GH_DATA_FILE}`;
+  return `https://api.github.com/repos/${c.owner}/${c.repo}/contents/${path}`;
 }
 function ghHeaders() {
   return {
@@ -362,47 +362,108 @@ function ghHeaders() {
   };
 }
 
-// Fetch latest data from GitHub — returns { data, sha } or null
-async function ghFetch() {
+// Generic GitHub file fetch — returns { data (decoded string), sha } or null
+async function ghFetchFile(path) {
   if (!ghConfigured()) return null;
   try {
-    const r = await fetch(ghApiUrl() + `?ref=${getGHConfig().branch}&t=${Date.now()}`, {
+    const r = await fetch(ghApiUrl(path) + `?ref=${getGHConfig().branch}&t=${Date.now()}`, {
       headers: ghHeaders(),
     });
-    if (r.status === 404) return { data: null, sha: null }; // file doesn't exist yet
+    if (r.status === 404) return { data: null, sha: null };
     if (!r.ok) { console.error('[GH] Fetch failed:', r.status, await r.text()); return null; }
     const json = await r.json();
-    const content = JSON.parse(atob(json.content.replace(/\n/g,'')));
-    return { data: content, sha: json.sha };
+    return { raw: json.content.replace(/\n/g,''), sha: json.sha };
   } catch(e) {
-    console.error('[GH] Fetch error:', e);
-    return null;
+    console.error('[GH] Fetch error:', e); return null;
   }
 }
 
-// Write data to GitHub — sha required for updates (null for first create)
-async function ghWrite(data, sha) {
-  if (!ghConfigured()) return false;
+// Generic GitHub file write
+async function ghWriteFile(path, base64Content, sha, message) {
+  if (!ghConfigured()) return null;
   try {
     const body = {
-      message: `PO Tool data update — ${new Date().toISOString()}`,
-      content: btoa(unescape(encodeURIComponent(JSON.stringify(data, null, 2)))),
+      message: message || `PO Tool update — ${new Date().toISOString()}`,
+      content: base64Content,
       branch:  getGHConfig().branch,
     };
     if (sha) body.sha = sha;
-    const r = await fetch(ghApiUrl(), {
-      method:  'PUT',
-      headers: ghHeaders(),
-      body:    JSON.stringify(body),
+    const r = await fetch(ghApiUrl(path), {
+      method: 'PUT', headers: ghHeaders(), body: JSON.stringify(body),
     });
-    if (!r.ok) { console.error('[GH] Write failed:', r.status, await r.text()); return false; }
+    if (!r.ok) { console.error('[GH] Write failed:', r.status, await r.text()); return null; }
     const json = await r.json();
-    // Cache the new SHA so next write doesn't need to re-fetch
-    state._ghSha = json.content.sha;
-    console.log('[GH] Data saved, sha:', state._ghSha);
+    return json.content.sha;
+  } catch(e) {
+    console.error('[GH] Write error:', e); return null;
+  }
+}
+
+// ---- Main data JSON fetch/write ----
+async function ghFetch() {
+  if (!ghConfigured()) return null;
+  const result = await ghFetchFile(GH_DATA_FILE);
+  if (!result) return null;
+  if (!result.raw) return { data: null, sha: null };
+  try {
+    const content = JSON.parse(atob(result.raw));
+    return { data: content, sha: result.sha };
+  } catch(e) { console.error('[GH] JSON parse error:', e); return null; }
+}
+
+async function ghWrite(data, sha) {
+  // Strip PDF blobs from the saved data — stored separately in pdfs/ folder
+  const clean = {
+    users:   data.users,
+    archive: data.archive,
+    pos:     (data.pos||[]).map(po => {
+      const {approvedPdfB64, originalPdfB64, ...rest} = po;
+      return rest;
+    }),
+  };
+  const newSha = await ghWriteFile(
+    GH_DATA_FILE,
+    btoa(unescape(encodeURIComponent(JSON.stringify(clean, null, 2)))),
+    sha,
+    `PO data update — ${new Date().toISOString()}`
+  );
+  if (newSha) { state._ghSha = newSha; console.log('[GH] Data saved, sha:', newSha); return true; }
+  return false;
+}
+
+// ---- PDF storage ----
+// Save approved PDF to pdfs/<filename>.pdf in the repo
+async function ghSavePDF(pdfB64, filename) {
+  if (!ghConfigured() || !pdfB64) return false;
+  const path = `${GH_PDF_FOLDER}/${filename}`;
+  // Check if file exists (to get SHA for update)
+  const existing = await ghFetchFile(path);
+  const sha = existing?.sha || null;
+  const newSha = await ghWriteFile(path, pdfB64, sha, `Approved PDF: ${filename}`);
+  return !!newSha;
+}
+
+// Get the public raw URL for a PDF stored in the repo
+function ghPdfUrl(filename) {
+  const c = getGHConfig();
+  // Use GitHub API download URL
+  return `https://api.github.com/repos/${c.owner}/${c.repo}/contents/${GH_PDF_FOLDER}/${filename}?ref=${c.branch}`;
+}
+
+// Download a PDF from GitHub and trigger browser download
+async function ghDownloadPDF(filename) {
+  if (!ghConfigured()) return false;
+  try {
+    const result = await ghFetchFile(`${GH_PDF_FOLDER}/${filename}`);
+    if (!result || !result.raw) { toast('PDF not found in GitHub storage.', 'error'); return false; }
+    const link = document.createElement('a');
+    link.href = 'data:application/pdf;base64,' + result.raw;
+    link.download = filename;
+    link.click();
     return true;
   } catch(e) {
-    console.error('[GH] Write error:', e);
+    console.error('[GH] PDF download error:', e);
+    toast('Failed to download PDF: ' + e.message, 'error');
     return false;
   }
 }
@@ -431,10 +492,14 @@ function loadState() {
 }
 
 function saveState() {
-  // Always save to localStorage immediately (fast local cache)
+  // Save to localStorage — strip PDF blobs to keep size small
   try {
+    const posClean = state.pos.map(po => {
+      const {approvedPdfB64, originalPdfB64, ...rest} = po;
+      return rest;
+    });
     localStorage.setItem('po_tool_optimal', JSON.stringify({
-      users: state.users, pos: state.pos, archive: state.archive, _ghSha: state._ghSha
+      users: state.users, pos: posClean, archive: state.archive, _ghSha: state._ghSha
     }));
     if (state.apiKey) localStorage.setItem('po_tool_apikey', state.apiKey);
   } catch(e) {}
@@ -1304,15 +1369,34 @@ function renderPODetail() {
           <div style="font-size:11px;color:var(--text2);margin-top:3px">By <strong>${esc(approver?.name||po.approvedBy)}</strong> on ${fmtDateTime(po.approvedAt)}</div>
         </div>
       </div>
-      ${po.approvedPdfB64 ? `<button class="btn btn-success btn-sm" id="dl-pdf-btn">⬇ Download Approved PDF</button>` : ''}
+      <div id="pdf-btn-wrap"></div>
     </div>`;
-    if (po.approvedPdfB64) {
-      stamp.querySelector('#dl-pdf-btn').onclick = () => {
-        const link = document.createElement('a');
-        link.href = 'data:application/pdf;base64,' + po.approvedPdfB64;
-        link.download = `PO_${(po.poNumber||po.id).replace(/[^a-zA-Z0-9]/g,'_')}_APPROVED.pdf`;
-        link.click();
+    if (po.approvedPdfB64 || po.approvedPdfFilename) {
+      const dlBtn = document.createElement('button');
+      dlBtn.className = 'btn btn-success btn-sm';
+      dlBtn.innerHTML = '⬇ Download Approved PDF';
+      dlBtn.onclick = async () => {
+        dlBtn.disabled = true;
+        dlBtn.textContent = 'Downloading…';
+        if (po.approvedPdfFilename && ghConfigured()) {
+          const ok = await ghDownloadPDF(po.approvedPdfFilename);
+          if (!ok && po.approvedPdfB64) {
+            const link = document.createElement('a');
+            link.href = 'data:application/pdf;base64,' + po.approvedPdfB64;
+            link.download = po.approvedPdfFilename || `PO_${po.id}_APPROVED.pdf`;
+            link.click();
+          }
+        } else if (po.approvedPdfB64) {
+          const link = document.createElement('a');
+          link.href = 'data:application/pdf;base64,' + po.approvedPdfB64;
+          link.download = po.approvedPdfFilename || `PO_${po.id}_APPROVED.pdf`;
+          link.click();
+        }
+        dlBtn.disabled = false;
+        dlBtn.innerHTML = '⬇ Download Approved PDF';
       };
+      const wrap = stamp.querySelector('#pdf-btn-wrap');
+      if (wrap) wrap.appendChild(dlBtn);
     }
     div.appendChild(stamp);
   }
@@ -1579,6 +1663,18 @@ async function approvePO(po) {
     // Generate watermarked PDF
     try {
       po.approvedPdfB64 = await generateApprovedPDF(po, approvedNames, po.approvedAt);
+      // Save PDF to GitHub storage
+      if (po.approvedPdfB64 && ghConfigured()) {
+        const pdfFilename = `PO_${(po.poNumber||po.id).replace(/[^a-zA-Z0-9]/g,'_')}_APPROVED.pdf`;
+        po.approvedPdfFilename = pdfFilename;
+        const saved = await ghSavePDF(po.approvedPdfB64, pdfFilename);
+        if (saved) {
+          console.log('[GH] PDF saved to GitHub:', pdfFilename);
+          toast('Approved PDF saved to GitHub storage ✓');
+        } else {
+          toast('Warning: PDF could not be saved to GitHub.', 'error', 5000);
+        }
+      }
     } catch(err) {
       console.error('PDF generation failed:', err);
       po.approvedPdfB64 = null;
