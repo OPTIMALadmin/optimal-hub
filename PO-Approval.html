@@ -1916,17 +1916,30 @@ function renderUsers() {
   const txC=['#185FA5','#3B6D11','#854F0B','#A32D2D','#0F6E56'];
   state.users.forEach(u=>{
     const row=document.createElement('div'); row.className='user-row';
+    row.style.cssText='flex-direction:column;align-items:stretch;gap:10px;padding:16px 0';
     const ini=u.name.split(' ').map(w=>w[0]).join('').slice(0,2).toUpperCase();
     const ci=u.id.charCodeAt(0)%bgC.length;
     row.innerHTML=`
-      <div class="user-avatar" style="background:${bgC[ci]};color:${txC[ci]}">${ini}</div>
-      <div class="user-info">
-        <div class="uname">${esc(u.name)} ${u.role==='admin'?'<span class="badge badge-blue" style="font-size:10px;margin-left:4px">Admin</span>':''}</div>
-        <div class="uemail">${esc(u.email)} · <span style="font-family:monospace">@${esc(u.login)}</span></div>
+      <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+        <div class="user-avatar" style="background:${bgC[ci]};color:${txC[ci]};flex-shrink:0">${ini}</div>
+        <div class="user-info" style="flex:1;min-width:160px">
+          <div class="uname">${esc(u.name)} ${u.role==='admin'?'<span class="badge badge-blue" style="font-size:10px;margin-left:4px">Admin</span>':''}</div>
+          <div class="uemail" style="margin-top:2px">${esc(u.email)} · <span style="font-family:monospace">@${esc(u.login)}</span></div>
+        </div>
+        <div style="display:flex;gap:5px;flex-wrap:wrap">
+          ${(u.levels||[]).map(l=>`<span class="badge badge-gray">L${l}</span>`).join('')}
+          ${!u.levels?.length&&u.role!=='admin'?'<span style="font-size:11px;color:var(--text3)">No approval</span>':''}
+        </div>
       </div>
-      <div style="display:flex;gap:5px;flex-wrap:wrap">
-        ${(u.levels||[]).map(l=>`<span class="badge badge-gray">L${l}</span>`).join('')}
-        ${!u.levels?.length&&u.role!=='admin'?'<span style="font-size:11px;color:var(--text3)">No approval</span>':''}
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+        <div class="form-group" style="margin:0">
+          <label>Login</label>
+          <input id="login-${u.id}" type="text" value="${esc(u.login)}" placeholder="username" ${u.login==='admin'?'disabled':''}>
+        </div>
+        <div class="form-group" style="margin:0">
+          <label>Email</label>
+          <input id="email-${u.id}" type="email" value="${esc(u.email)}" placeholder="user@company.com">
+        </div>
       </div>
       <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
         <select id="lvl-${u.id}" style="font-size:12px;padding:6px 10px;width:auto">
@@ -1938,18 +1951,38 @@ function renderUsers() {
           <option value="2,3"   ${u.levels?.join(',')===('2,3')  ?'selected':''}>L2 + L3</option>
           <option value="3"     ${u.levels?.join(',')===('3')    ?'selected':''}>L3 only</option>
         </select>
-        <button class="btn btn-outline btn-sm" onclick="saveUserLevels('${u.id}')">Save</button>
+        <button class="btn btn-outline btn-sm" onclick="saveUserDetails('${u.id}')">Save</button>
         ${u.login!=='admin'?`<button class="btn btn-sm" style="background:var(--red-bg);color:var(--red);border:1px solid var(--red-light)" onclick="removeUser('${u.id}','${esc(u.name)}')">Remove</button>`:''}
       </div>`;
     listCard.appendChild(row);
   });
   div.appendChild(listCard); return div;
 }
-function saveUserLevels(uid) {
-  const sel=document.getElementById('lvl-'+uid); if(!sel)return;
-  const u=state.users.find(x=>x.id===uid); if(!u)return;
-  u.levels=sel.value?sel.value.split(',').map(Number):[];
-  saveState(); toast(`${u.name}'s levels updated.`); render();
+function saveUserDetails(uid) {
+  const u = state.users.find(x => x.id === uid); if (!u) return;
+  const newLogin = document.getElementById('login-'+uid)?.value.trim();
+  const newEmail = document.getElementById('email-'+uid)?.value.trim();
+  const sel      = document.getElementById('lvl-'+uid);
+
+  if (!newEmail) { toast('Email cannot be empty.', 'error'); return; }
+  if (!newLogin && u.login !== 'admin') { toast('Login cannot be empty.', 'error'); return; }
+
+  // Check login uniqueness (excluding self)
+  if (newLogin && newLogin !== u.login && state.users.find(x => x.login === newLogin && x.id !== uid)) {
+    toast(`Login "${newLogin}" is already taken.`, 'error'); return;
+  }
+
+  if (newLogin && u.login !== 'admin') u.login = newLogin;
+  u.email  = newEmail;
+  if (sel) u.levels = sel.value ? sel.value.split(',').map(Number) : [];
+
+  // If user edited their own login/email, update currentUser too
+  if (state.currentUser?.id === uid) {
+    state.currentUser.login = u.login;
+    state.currentUser.email = u.email;
+  }
+
+  saveState(); toast(`${u.name} updated.`); render();
 }
 function removeUser(uid,name) {
   if (!confirm(`Remove user "${name}"?`)) return;
