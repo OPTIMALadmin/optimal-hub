@@ -392,11 +392,19 @@ async function ghWriteFile(path, base64Content, sha, message) {
     const r = await fetch(ghApiUrl(path), {
       method: 'PUT', headers: ghHeaders(), body: JSON.stringify(body),
     });
-    if (!r.ok) { console.error('[GH] Write failed:', r.status, await r.text()); return null; }
+    if (!r.ok) {
+      const text = await r.text();
+      state._ghError = `HTTP ${r.status}: ${text}`;
+      console.error('[GH] Write failed:', r.status, text);
+      return null;
+    }
     const json = await r.json();
+    state._ghError = null;
     return json.content.sha;
   } catch(e) {
-    console.error('[GH] Write error:', e); return null;
+    state._ghError = `Network error: ${e.message}`;
+    console.error('[GH] Write error:', e);
+    return null;
   }
 }
 
@@ -460,7 +468,8 @@ async function ghWrite(data, sha) {
     sha,
     `PO data update — ${new Date().toISOString()}`
   );
-  if (newSha) { state._ghSha = newSha; console.log('[GH] Data saved, sha:', newSha); return true; }
+  if (newSha) { state._ghSha = newSha; state._ghError = null; console.log('[GH] Data saved, sha:', newSha); return true; }
+  state._ghError = state._ghError || 'Write failed — SHA conflict or permission denied';
   return false;
 }
 
@@ -2193,10 +2202,19 @@ function renderApiSettings() {
   if (ghOk) {
     ghCard.querySelector('#gh-push-btn').onclick = async () => {
       const res = document.getElementById('gh-result');
-      res.innerHTML='<div class="alert alert-info">Pushing data to GitHub…</div>';
-      const ok = await ghPush();
-      res.innerHTML = ok ? '<div class="alert alert-success">✓ Data pushed to GitHub successfully.</div>'
-                         : '<div class="alert alert-error">✗ Push failed — check console for details.</div>';
+      res.innerHTML='<div class="alert alert-info">Pushing data to GitHub… (fetching latest SHA first)</div>';
+      // Always fetch fresh SHA before pushing to avoid conflicts
+      const fetched = await ghFetch();
+      if (fetched === null) {
+        res.innerHTML=`<div class="alert alert-error">✗ Cannot reach GitHub — check your token and network.<br>${state._ghError||''}</div>`;
+        return;
+      }
+      state._ghSha = fetched.sha;
+      const data = { users: state.users, pos: state.pos, archive: state.archive };
+      const ok = await ghWrite(data, state._ghSha);
+      res.innerHTML = ok
+        ? '<div class="alert alert-success">✓ Data pushed to GitHub successfully.</div>'
+        : `<div class="alert alert-error">✗ Push failed: ${state._ghError||'unknown error — check browser console (F12)'}</div>`;
     };
     ghCard.querySelector('#gh-pull-btn').onclick = async () => {
       const res = document.getElementById('gh-result');
