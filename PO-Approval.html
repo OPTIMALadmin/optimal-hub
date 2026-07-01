@@ -521,7 +521,7 @@ function loadState() {
     state.apiKey  = localStorage.getItem('po_tool_apikey') || '';
     state._ghSha  = s._ghSha  || null;
 
-    // Migration: add any new users from INITIAL_USERS
+    // Only add truly new users from INITIAL_USERS — never overwrite existing ones
     INITIAL_USERS.forEach(iu => {
       if (!state.users.find(u => u.id === iu.id || u.login === iu.login)) {
         state.users.push({...iu});
@@ -597,11 +597,11 @@ async function ghPull() {
   state.archive = d.archive || state.archive;
   state._ghSha  = result.sha;
 
-  // Always restore correct names/emails from INITIAL_USERS to fix any encoding corruption
+  // Only add truly missing users from INITIAL_USERS (new ones added in code)
+  // Do NOT overwrite email/login/name — those may have been edited by admin
   INITIAL_USERS.forEach(iu => {
-    const u = state.users.find(u => u.id === iu.id || u.login === iu.login);
-    if (u) { u.name = iu.name; u.email = iu.email; }
-    else state.users.push({...iu});
+    const exists = state.users.find(u => u.id === iu.id || u.login === iu.login);
+    if (!exists) state.users.push({...iu}); // only add if completely absent
   });
 
   // Update local cache
