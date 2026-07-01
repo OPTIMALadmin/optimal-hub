@@ -321,6 +321,7 @@ let state = {
   reviewPdfName: null,
   ghSyncing: false,
   _ghSha: null,
+  _ghError: null,
   apiKey: '',
 };
 
@@ -404,28 +405,35 @@ async function ghFetch() {
   if (!ghConfigured()) return null;
   try {
     const c = getGHConfig();
+    console.log('[GH] Fetching from:', `${c.owner}/${c.repo}`, 'branch:', c.branch);
     const r = await fetch(
       `https://api.github.com/repos/${c.owner}/${c.repo}/contents/${GH_DATA_FILE}?ref=${c.branch}&t=${Date.now()}`,
       { headers: ghHeaders() }
     );
-    // 404 = file doesn't exist yet — not an error, just first run
+    console.log('[GH] Fetch response status:', r.status);
     if (r.status === 404) return { data: null, sha: null };
+    if (r.status === 401) { state._ghError = 'Authentication failed (401) — check your PAT token'; return null; }
+    if (r.status === 403) { state._ghError = 'Access forbidden (403) — PAT may lack repo permissions'; return null; }
     if (!r.ok) {
-      console.error('[GH] Fetch failed:', r.status, await r.text());
-      return null; // real error
+      const text = await r.text();
+      state._ghError = `HTTP ${r.status}: ${text}`;
+      console.error('[GH] Fetch failed:', r.status, text);
+      return null;
     }
     const json = await r.json();
     const raw = json.content.replace(/\n/g,'');
     try {
       const data = JSON.parse(atob(raw));
+      state._ghError = null;
       return { data, sha: json.sha };
     } catch(e) {
       console.error('[GH] JSON parse error:', e);
-      return { data: null, sha: json.sha }; // file exists but empty/corrupt
+      return { data: null, sha: json.sha };
     }
   } catch(e) {
+    state._ghError = `Network error: ${e.message}`;
     console.error('[GH] Fetch network error:', e);
-    return null; // real network failure
+    return null;
   }
 }
 
@@ -774,10 +782,13 @@ function doLogin() {
 
   // Pull latest data from GitHub before showing the app
   if (ghConfigured()) {
-    render(); // show loading state
+    render();
     ghPull().then(ok => {
       if (ok) toast('Synced with GitHub ✓');
-      else toast('GitHub sync failed — using local data', 'error', 5000);
+      else {
+        const reason = state._ghError ? ` (${state._ghError})` : '';
+        toast(`GitHub sync failed${reason} — using local data`, 'error', 8000);
+      }
       render();
     });
   } else {
