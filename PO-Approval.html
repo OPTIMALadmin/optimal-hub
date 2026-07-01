@@ -625,16 +625,11 @@ async function ghPull() {
   state.archive = d.archive || state.archive;
   state._ghSha  = result.sha;
 
-  // Only add INITIAL_USERS entries that are completely absent from GitHub data
-  // AND whose id is not in the GitHub users list (meaning they were never deleted there)
-  const ghUserIds = (d.users||[]).map(u => u.id);
-  const ghUserLogins = (d.users||[]).map(u => u.login);
-  INITIAL_USERS.forEach(iu => {
-    // Only add if absent from both id and login in the pulled data
-    const inGH = ghUserIds.includes(iu.id) || ghUserLogins.includes(iu.login);
-    const inState = state.users.find(u => u.id === iu.id || u.login === iu.login);
-    if (!inGH && !inState) state.users.push({...iu});
-  });
+  // If GitHub has no users at all (brand new file), seed from INITIAL_USERS
+  // Otherwise trust GitHub completely — it is the source of truth
+  if (!d.users || d.users.length === 0) {
+    state.users = JSON.parse(JSON.stringify(INITIAL_USERS));
+  }
 
   // Update local cache
   try {
@@ -2034,6 +2029,7 @@ async function removeUser(uid, name) {
   if (!confirm(`Remove user "${name}"?`)) return;
   state.users = state.users.filter(u => u.id !== uid);
 
+  // Save locally
   try {
     const posClean = state.pos.map(po => { const {approvedPdfB64, originalPdfB64, ...rest} = po; return rest; });
     localStorage.setItem('po_tool_optimal', JSON.stringify({
@@ -2041,10 +2037,23 @@ async function removeUser(uid, name) {
     }));
   } catch(e) {}
 
+  // Force push directly — bypass ghPush to avoid any migration adding user back
   if (ghConfigured()) {
-    const ok = await ghPush();
-    if (ok) toast(`${name} removed and saved to GitHub ✓`);
-    else toast(`${name} removed locally — GitHub sync failed. Try manual sync.`, 'error', 6000);
+    const fetched = await ghFetch();
+    if (fetched !== null) {
+      state._ghSha = fetched.sha;
+      // Build clean data explicitly without the removed user
+      const cleanData = {
+        users:   state.users, // already filtered above
+        pos:     state.pos,
+        archive: state.archive,
+      };
+      const ok = await ghWrite(cleanData, state._ghSha);
+      if (ok) toast(`${name} removed and saved to GitHub ✓`);
+      else toast(`${name} removed locally — GitHub sync failed (${state._ghError||'unknown'})`, 'error', 8000);
+    } else {
+      toast(`${name} removed locally — could not reach GitHub`, 'error', 6000);
+    }
   } else {
     toast(`${name} removed.`);
   }
