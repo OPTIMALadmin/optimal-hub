@@ -552,23 +552,22 @@ function saveState() {
   }
 }
 
-// Push current state to GitHub
+// Push current state to GitHub — returns true on success
 async function ghPush() {
   const data = { users: state.users, pos: state.pos, archive: state.archive };
-  // If we don't have a SHA yet, fetch it first
-  if (!state._ghSha) {
-    const fetched = await ghFetch();
-    if (fetched) state._ghSha = fetched.sha;
-  }
+  // Always fetch fresh SHA first to avoid conflicts
+  const fetched = await ghFetch();
+  if (fetched === null) return false; // can't reach GitHub
+  state._ghSha = fetched.sha;
   const ok = await ghWrite(data, state._ghSha);
   if (!ok) {
-    // SHA conflict — re-fetch and retry once
-    const fetched = await ghFetch();
-    if (fetched) {
-      state._ghSha = fetched.sha;
-      await ghWrite(data, state._ghSha);
-    }
+    // Retry once with fresh SHA
+    const fetched2 = await ghFetch();
+    if (!fetched2) return false;
+    state._ghSha = fetched2.sha;
+    return await ghWrite(data, state._ghSha);
   }
+  return true;
 }
 
 // Pull latest data from GitHub and merge into state
@@ -1958,7 +1957,7 @@ function renderUsers() {
   });
   div.appendChild(listCard); return div;
 }
-function saveUserDetails(uid) {
+async function saveUserDetails(uid) {
   const u = state.users.find(x => x.id === uid); if (!u) return;
   const newLogin = document.getElementById('login-'+uid)?.value.trim();
   const newEmail = document.getElementById('email-'+uid)?.value.trim();
@@ -1967,7 +1966,6 @@ function saveUserDetails(uid) {
   if (!newEmail) { toast('Email cannot be empty.', 'error'); return; }
   if (!newLogin && u.login !== 'admin') { toast('Login cannot be empty.', 'error'); return; }
 
-  // Check login uniqueness (excluding self)
   if (newLogin && newLogin !== u.login && state.users.find(x => x.login === newLogin && x.id !== uid)) {
     toast(`Login "${newLogin}" is already taken.`, 'error'); return;
   }
@@ -1976,17 +1974,49 @@ function saveUserDetails(uid) {
   u.email  = newEmail;
   if (sel) u.levels = sel.value ? sel.value.split(',').map(Number) : [];
 
-  // If user edited their own login/email, update currentUser too
   if (state.currentUser?.id === uid) {
     state.currentUser.login = u.login;
     state.currentUser.email = u.email;
   }
 
-  saveState(); toast(`${u.name} updated.`); render();
+  // Save locally first
+  try {
+    const posClean = state.pos.map(po => { const {approvedPdfB64, originalPdfB64, ...rest} = po; return rest; });
+    localStorage.setItem('po_tool_optimal', JSON.stringify({
+      users: state.users, pos: posClean, archive: state.archive, _ghSha: state._ghSha
+    }));
+  } catch(e) {}
+
+  // Push to GitHub and await result
+  if (ghConfigured()) {
+    const ok = await ghPush();
+    if (ok) toast(`${u.name} updated and saved to GitHub ✓`);
+    else toast(`${u.name} saved locally — GitHub sync failed. Try manual sync.`, 'error', 6000);
+  } else {
+    toast(`${u.name} updated.`);
+  }
+  render();
 }
-function removeUser(uid,name) {
+
+async function removeUser(uid, name) {
   if (!confirm(`Remove user "${name}"?`)) return;
-  state.users=state.users.filter(u=>u.id!==uid); saveState(); toast(`${name} removed.`); render();
+  state.users = state.users.filter(u => u.id !== uid);
+
+  try {
+    const posClean = state.pos.map(po => { const {approvedPdfB64, originalPdfB64, ...rest} = po; return rest; });
+    localStorage.setItem('po_tool_optimal', JSON.stringify({
+      users: state.users, pos: posClean, archive: state.archive, _ghSha: state._ghSha
+    }));
+  } catch(e) {}
+
+  if (ghConfigured()) {
+    const ok = await ghPush();
+    if (ok) toast(`${name} removed and saved to GitHub ✓`);
+    else toast(`${name} removed locally — GitHub sync failed. Try manual sync.`, 'error', 6000);
+  } else {
+    toast(`${name} removed.`);
+  }
+  render();
 }
 
 // ============================================================
