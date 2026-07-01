@@ -431,14 +431,16 @@ async function ghFetch() {
     const json = await r.json();
     const raw = json.content.replace(/\n/g,'');
     try {
-      // Use TextDecoder for proper UTF-8 handling
-      const bytes = Uint8Array.from(atob(raw), c => c.charCodeAt(0));
-      const jsonStr = new TextDecoder().decode(bytes);
+      // Decode base64 to bytes then UTF-8 decode
+      const binaryStr = atob(raw);
+      const bytes = new Uint8Array(binaryStr.length);
+      for (let i = 0; i < binaryStr.length; i++) bytes[i] = binaryStr.charCodeAt(i);
+      const jsonStr = new TextDecoder('utf-8').decode(bytes);
       const data = JSON.parse(jsonStr);
       state._ghError = null;
       return { data, sha: json.sha };
     } catch(e) {
-      console.error('[GH] JSON parse error:', e);
+      console.error('[GH] JSON parse/decode error:', e);
       return { data: null, sha: json.sha };
     }
   } catch(e) {
@@ -449,7 +451,6 @@ async function ghFetch() {
 }
 
 async function ghWrite(data, sha) {
-  // Strip PDF blobs from the saved data — stored separately in pdfs/ folder
   const clean = {
     users:   data.users,
     archive: data.archive,
@@ -458,18 +459,41 @@ async function ghWrite(data, sha) {
       return rest;
     }),
   };
-  // Use TextEncoder for proper UTF-8 handling of special characters (é, ã, ç, etc.)
+
+  // Safe base64 encoding that handles large data and special characters
   const jsonStr = JSON.stringify(clean, null, 2);
-  const bytes = new TextEncoder().encode(jsonStr);
-  const b64 = btoa(String.fromCharCode(...bytes));
+  let b64;
+  try {
+    // Use TextEncoder + chunked btoa for large/UTF-8 data
+    const bytes = new TextEncoder().encode(jsonStr);
+    let binary = '';
+    const chunkSize = 8192;
+    for (let i = 0; i < bytes.length; i += chunkSize) {
+      binary += String.fromCharCode(...bytes.subarray(i, i + chunkSize));
+    }
+    b64 = btoa(binary);
+  } catch(e) {
+    console.error('[GH] Encoding error:', e);
+    state._ghError = 'Encoding error: ' + e.message;
+    return false;
+  }
+
+  console.log('[GH] Writing', jsonStr.length, 'chars,', b64.length, 'base64 chars, sha:', sha);
+
   const newSha = await ghWriteFile(
     GH_DATA_FILE,
     b64,
     sha,
     `PO data update — ${new Date().toISOString()}`
   );
-  if (newSha) { state._ghSha = newSha; state._ghError = null; console.log('[GH] Data saved, sha:', newSha); return true; }
+  if (newSha) {
+    state._ghSha = newSha;
+    state._ghError = null;
+    console.log('[GH] Data saved OK, new sha:', newSha);
+    return true;
+  }
   state._ghError = state._ghError || 'Write failed — SHA conflict or permission denied';
+  console.error('[GH] Write failed, error:', state._ghError);
   return false;
 }
 
