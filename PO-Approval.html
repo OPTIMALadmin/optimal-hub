@@ -583,19 +583,17 @@ function saveState() {
 // Push current state to GitHub — returns true on success
 async function ghPush() {
   const data = { users: state.users, pos: state.pos, archive: state.archive };
-  // Always fetch fresh SHA first to avoid conflicts
-  const fetched = await ghFetch();
-  if (fetched === null) return false; // can't reach GitHub
-  state._ghSha = fetched.sha;
-  const ok = await ghWrite(data, state._ghSha);
-  if (!ok) {
-    // Retry once with fresh SHA
-    const fetched2 = await ghFetch();
-    if (!fetched2) return false;
-    state._ghSha = fetched2.sha;
-    return await ghWrite(data, state._ghSha);
+  // Try up to 3 times with fresh SHA each time
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    const fetched = await ghFetch();
+    if (fetched === null) { console.error('[GH] Push: cannot reach GitHub'); return false; }
+    state._ghSha = fetched.sha;
+    const ok = await ghWrite(data, state._ghSha);
+    if (ok) { console.log('[GH] Push succeeded on attempt', attempt); return true; }
+    console.warn('[GH] Push attempt', attempt, 'failed:', state._ghError);
+    if (attempt < 3) await new Promise(r => setTimeout(r, 500)); // wait before retry
   }
-  return true;
+  return false;
 }
 
 // Pull latest data from GitHub and merge into state
@@ -2017,10 +2015,10 @@ async function saveUserDetails(uid) {
   // Push to GitHub and await result
   if (ghConfigured()) {
     const ok = await ghPush();
-    if (ok) toast(`${u.name} updated and saved to GitHub ✓`);
-    else toast(`${u.name} saved locally — GitHub sync failed. Try manual sync.`, 'error', 6000);
+    if (ok) toast(`${u.name} saved ✓ (email: ${u.email})`);
+    else toast(`${u.name} saved locally — GitHub sync failed (${state._ghError||'unknown'})`, 'error', 8000);
   } else {
-    toast(`${u.name} updated.`);
+    toast(`${u.name} updated (email: ${u.email}).`);
   }
   render();
 }
