@@ -1046,7 +1046,7 @@ function renderUpload() {
       </button>
     </div>
     <p style="font-size:11px;color:var(--text3);margin-top:8px;text-align:center">PDF is read locally — your file never leaves your computer</p>
-    ${!state.apiKey ? `<div class="alert alert-warning" style="margin-top:12px;font-size:12px">⚠️ No API key set. <a onclick="nav('apisettings')" style="color:var(--amber);font-weight:600;cursor:pointer">Configure it here</a> before uploading a PDF.</div>` : ''}`;
+    ${!(state.apiKey || localStorage.getItem('po_tool_apikey')) ? `<div class="alert alert-warning" style="margin-top:12px;font-size:12px">⚠️ No API key set. <a onclick="nav('apisettings')" style="color:var(--amber);font-weight:600;cursor:pointer">Configure it here</a> before uploading a PDF.</div>` : ''}`;
 
   // Option B — Manual
   const optB = document.createElement('div'); optB.className='upload-option'; optB.style.cursor='pointer';
@@ -1130,13 +1130,17 @@ JSON structure:
 
 Use "" for missing strings, 0 for missing numbers. Return only the JSON.`;
 
-  if (!state.apiKey) throw new Error('No API key configured. Please go to Admin → API Key and enter your Anthropic API key.');
+  // Always read fresh from localStorage — state.apiKey may not be set if pull overwrote it
+  const apiKey = localStorage.getItem('po_tool_apikey') || state.apiKey || '';
+  console.log('[Extract] API key present:', !!apiKey, 'ends in:', apiKey?.slice(-4));
+
+  if (!apiKey) throw new Error('No API key configured. Please go to Admin → API Key and enter your Anthropic API key.');
 
   const resp = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
     headers: {
       'Content-Type':'application/json',
-      'x-api-key': state.apiKey,
+      'x-api-key': apiKey,
       'anthropic-version': '2023-06-01',
       'anthropic-dangerous-direct-browser-access':'true'
     },
