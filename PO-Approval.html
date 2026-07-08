@@ -336,21 +336,22 @@ const GH_PDF_FOLDER = 'pdfs';
 const GH_OWNER  = 'optimaladmin';
 const GH_REPO   = 'po-data';
 const GH_BRANCH = 'main';
+const GH_TOKEN_DEFAULT  = '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'; // ← Paste your GitHub PAT here
+const ANTHROPIC_KEY_DEFAULT = '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'; // ← Paste your Anthropic API key here
 
 function getGHConfig() {
   return {
-    token:  localStorage.getItem('po_gh_token') || '',
+    token:  localStorage.getItem('po_gh_token') || GH_TOKEN_DEFAULT,
     owner:  GH_OWNER,
     repo:   GH_REPO,
     branch: GH_BRANCH,
   };
 }
-function saveGHConfig(token, owner, repo, branch) {
-  // Only save the token — owner/repo/branch are hardcoded
+function saveGHConfig(token) {
   localStorage.setItem('po_gh_token', token);
 }
 function ghConfigured() {
-  return !!localStorage.getItem('po_gh_token');
+  return !!(localStorage.getItem('po_gh_token') || GH_TOKEN_DEFAULT);
 }
 
 function ghApiUrl(path) {
@@ -546,7 +547,7 @@ function loadState() {
     state.users   = s.users   || JSON.parse(JSON.stringify(INITIAL_USERS));
     state.pos     = s.pos     || [];
     state.archive = s.archive || [];
-    state.apiKey  = localStorage.getItem('po_tool_apikey') || '';
+    state.apiKey  = localStorage.getItem('po_tool_apikey') || ANTHROPIC_KEY_DEFAULT;
     state._ghSha  = s._ghSha  || null;
 
     // Only add INITIAL_USERS entries completely absent from saved state
