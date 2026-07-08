@@ -321,6 +321,7 @@ let state = {
   ghSyncing: false,
   _ghSha: null,
   _ghError: null,
+  emailJSReachable: null, // null=untested, true=ok, false=blocked
   apiKey: '',
 };
 
@@ -328,26 +329,28 @@ let state = {
 // ============================================================
 // GITHUB STORAGE BACKEND
 // ============================================================
-const GH_DATA_FILE = 'po_data.json'; // path in repo
-const GH_PDF_FOLDER = 'pdfs';        // folder for approved PDFs
+const GH_DATA_FILE = 'po_data.json';
+const GH_PDF_FOLDER = 'pdfs';
+
+// GitHub config — owner/repo/branch embedded, only PAT stored per-browser
+const GH_OWNER  = 'optimaladmin';
+const GH_REPO   = 'po-data';
+const GH_BRANCH = 'main';
 
 function getGHConfig() {
   return {
-    token: localStorage.getItem('po_gh_token') || '',
-    owner: localStorage.getItem('po_gh_owner') || '',
-    repo:  localStorage.getItem('po_gh_repo')  || '',
-    branch:localStorage.getItem('po_gh_branch')|| 'main',
+    token:  localStorage.getItem('po_gh_token') || '',
+    owner:  GH_OWNER,
+    repo:   GH_REPO,
+    branch: GH_BRANCH,
   };
 }
 function saveGHConfig(token, owner, repo, branch) {
-  localStorage.setItem('po_gh_token',  token);
-  localStorage.setItem('po_gh_owner',  owner);
-  localStorage.setItem('po_gh_repo',   repo);
-  localStorage.setItem('po_gh_branch', branch||'main');
+  // Only save the token — owner/repo/branch are hardcoded
+  localStorage.setItem('po_gh_token', token);
 }
 function ghConfigured() {
-  const c = getGHConfig();
-  return !!(c.token && c.owner && c.repo);
+  return !!localStorage.getItem('po_gh_token');
 }
 
 function ghApiUrl(path) {
@@ -453,6 +456,8 @@ async function ghWrite(data, sha) {
   const clean = {
     users:   data.users,
     archive: data.archive,
+    apiKey:  state.apiKey || '',
+    ghToken: localStorage.getItem('po_gh_token') || '',
     pos:     (data.pos||[]).map(po => {
       const {approvedPdfB64, originalPdfB64, ...rest} = po;
       return rest;
@@ -622,6 +627,16 @@ async function ghPull() {
   state.pos     = d.pos     || state.pos;
   state.archive = d.archive || state.archive;
   state._ghSha  = result.sha;
+  // Restore API key from GitHub if not set locally
+  if (d.apiKey && !state.apiKey) {
+    state.apiKey = d.apiKey;
+    localStorage.setItem('po_tool_apikey', d.apiKey);
+  }
+  // Restore PAT token from GitHub data if not set locally
+  if (d.ghToken && !localStorage.getItem('po_gh_token')) {
+    localStorage.setItem('po_gh_token', d.ghToken);
+    console.log('[GH] PAT token restored from GitHub data');
+  }
 
   // If GitHub has no users at all (brand new file), seed from INITIAL_USERS
   // Otherwise trust GitHub completely — it is the source of truth
@@ -748,6 +763,23 @@ const EMAILJS_TEMPLATE_ID = 'template_uge12ij';
 const EMAILJS_PUBLIC_KEY  = 'wtS4KdSX8P9ihISpT';
 emailjs.init(EMAILJS_PUBLIC_KEY);
 
+// Test EmailJS connectivity silently on startup
+async function testEmailJS() {
+  try {
+    // Send a minimal request — will get 400 (bad params) if reachable, network error if blocked
+    const r = await fetch('https://api.emailjs.com/api/v1.0/email/send', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ service_id:'x', template_id:'x', user_id:'x', template_params:{} }),
+    });
+    state.emailJSReachable = true; // any HTTP response = server is reachable
+    console.log('[EmailJS] Server reachable, status:', r.status);
+  } catch(e) {
+    state.emailJSReachable = false;
+    console.warn('[EmailJS] Server NOT reachable:', e.message);
+  }
+}
+
 async function sendEmail(to, subject, message, poId) {
   state.archive.unshift({ id:uid(), type:'email', to, subject, poId, ts:new Date().toISOString() });
   saveState();
@@ -820,12 +852,18 @@ function doLogin() {
   state.loggedIn = true; state.currentUser = user; state.page = 'dashboard';
   state.reviewData = null; state.reviewItems = []; state.modal = null;
 
-  // Pull latest data from GitHub before showing the app
+  // Run EmailJS test and GitHub pull in parallel
+  testEmailJS();
   if (ghConfigured()) {
     render();
     ghPull().then(ok => {
-      if (ok) toast('Synced with GitHub ✓');
-      else {
+      if (ok) {
+        if (state.emailJSReachable === false) {
+          toast('Synced ✓ — Warning: EmailJS unreachable, emails may not send', 'error', 8000);
+        } else {
+          toast('Synced with GitHub ✓');
+        }
+      } else {
         const reason = state._ghError ? ` (${state._ghError})` : '';
         toast(`GitHub sync failed${reason} — using local data`, 'error', 8000);
       }
@@ -2206,11 +2244,18 @@ function renderApiSettings() {
   // ── EmailJS test card ──────────────────────────────────────
   const ejCard = document.createElement('div'); ejCard.className = 'card'; ejCard.style.marginBottom = '20px';
   ejCard.innerHTML = `
-    <div style="font-size:12px;font-weight:700;margin-bottom:12px;color:var(--cyan);text-transform:uppercase;letter-spacing:0.06em">EmailJS Connection Test</div>
-    <p style="font-size:11px;color:var(--text2);margin-bottom:14px;line-height:1.7">Use these buttons to diagnose email delivery issues.</p>
+    <div style="font-size:12px;font-weight:700;margin-bottom:12px;color:var(--cyan);text-transform:uppercase;letter-spacing:0.06em">EmailJS Status</div>
+    <p style="font-size:11px;color:var(--text2);margin-bottom:14px;line-height:1.7">EmailJS is used to send approval emails. It must be reachable from this browser/computer.</p>
+    <div style="margin-bottom:14px">
+      ${state.emailJSReachable === true
+        ? '<div class="alert alert-success">✓ EmailJS server is reachable from this computer — emails should work.</div>'
+        : state.emailJSReachable === false
+          ? '<div class="alert alert-error">✗ EmailJS server is NOT reachable from this computer — emails will fail.<br><br><strong>Fix:</strong> Go to <a href="https://emailjs.com" target="_blank" style="color:var(--red-light)">emailjs.com</a> → Account → Security → add <strong>https://optimaladmin.github.io</strong> to allowed origins, or disable domain restriction.</div>'
+          : '<div class="alert alert-info">EmailJS connectivity not yet tested — log out and back in to test.</div>'}
+    </div>
     <div style="display:flex;gap:10px;flex-wrap:wrap">
-      <button class="btn btn-outline btn-sm" id="test-reach-btn">🔌 Test Network Reach</button>
-      <button class="btn btn-outline btn-sm" id="test-send-btn">📧 Send Test Email</button>
+      <button class="btn btn-outline btn-sm" id="test-reach-btn">🔌 Re-test Connection</button>
+      <button class="btn btn-outline btn-sm" id="test-send-btn">📧 Send Test Email to Admin</button>
     </div>
     <div id="ej-result" style="margin-top:14px"></div>`;
 
@@ -2218,18 +2263,18 @@ function renderApiSettings() {
     const res = document.getElementById('ej-result');
     res.innerHTML = '<div class="alert alert-info">Testing connection to api.emailjs.com…</div>';
     try {
-      // Send intentionally invalid payload — any HTTP response means server is reachable
       const r = await fetch('https://api.emailjs.com/api/v1.0/email/send', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ service_id:'x', template_id:'x', user_id:'x', template_params:{} }),
       });
-      res.innerHTML = `<div class="alert alert-success">✓ EmailJS server is reachable (HTTP ${r.status} — ${await r.text()}). Network is not the issue — check your EmailJS account configuration.</div>`;
+      state.emailJSReachable = true;
+      res.innerHTML = `<div class="alert alert-success">✓ EmailJS server is reachable (HTTP ${r.status}) — emails should work from this computer.</div>`;
     } catch(err) {
+      state.emailJSReachable = false;
       res.innerHTML = `<div class="alert alert-error">✗ Cannot reach api.emailjs.com: <strong>${err.message}</strong><br><br>
-        Your browser or server is blocking outbound requests to EmailJS.<br>
-        Try opening <a href="https://api.emailjs.com" target="_blank" style="color:var(--red-light)">https://api.emailjs.com</a> directly to confirm.<br>
-        If that also fails, contact your hosting provider about outbound HTTPS restrictions.
+        Go to <a href="https://emailjs.com" target="_blank" style="color:var(--red-light)">emailjs.com</a> → Account → Security → add
+        <strong>https://optimaladmin.github.io</strong> to allowed origins, or disable domain restriction.
       </div>`;
     }
   };
@@ -2258,40 +2303,49 @@ function renderApiSettings() {
   const ghOk  = ghConfigured();
   ghCard.innerHTML = `
     <div style="font-size:12px;font-weight:700;margin-bottom:12px;color:var(--cyan);text-transform:uppercase;letter-spacing:0.06em">GitHub Shared Storage</div>
-    <p style="font-size:11px;color:var(--text2);margin-bottom:16px;line-height:1.7">Connect to a GitHub repository to share PO data across all users. All changes are synced automatically.</p>
-    ${ghOk ? '<div class="alert alert-success" style="margin-bottom:14px">✓ GitHub storage is configured and active.</div>' : '<div class="alert alert-warning" style="margin-bottom:14px">⚠ GitHub storage not configured — data is local only.</div>'}
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:14px">
-      <div class="form-group" style="margin:0"><label>GitHub Username / Org</label><input id="gh-owner" placeholder="e.g. optimal-group" value="${esc(ghCfg.owner)}"></div>
-      <div class="form-group" style="margin:0"><label>Repository Name</label><input id="gh-repo" placeholder="e.g. po-approval-tool" value="${esc(ghCfg.repo)}"></div>
-      <div class="form-group" style="margin:0"><label>Branch</label><input id="gh-branch" placeholder="main" value="${esc(ghCfg.branch||'main')}"></div>
-      <div class="form-group" style="margin:0"><label>Personal Access Token (PAT)</label><input type="password" id="gh-token" placeholder="ghp_xxxxxxxxxxxx" value="${esc(ghCfg.token)}"></div>
+    <p style="font-size:11px;color:var(--text2);margin-bottom:12px;line-height:1.7">
+      Data is stored in <strong style="color:var(--cyan)">optimaladmin/po-data</strong> (private repo).
+      Owner, repo and branch are pre-configured — you only need to enter your Personal Access Token (PAT).
+      Once set on one computer, the PAT is automatically shared to all other computers on next login.
+    </p>
+    ${ghOk
+      ? '<div class="alert alert-success" style="margin-bottom:14px">✓ GitHub storage is active — syncing to optimaladmin/po-data</div>'
+      : '<div class="alert alert-warning" style="margin-bottom:14px">⚠ PAT not set — enter your token below to enable shared storage.</div>'}
+    <div style="margin-bottom:14px">
+      <div class="form-group" style="margin:0;max-width:500px">
+        <label>Personal Access Token (PAT)</label>
+        <input type="password" id="gh-token" placeholder="ghp_xxxxxxxxxxxx" value="${esc(ghCfg.token)}">
+      </div>
     </div>
-    <p style="font-size:10px;color:var(--text3);margin-bottom:14px;line-height:1.6">Create a PAT at <a href="https://github.com/settings/tokens" target="_blank" style="color:var(--cyan)">github.com/settings/tokens</a> → Generate new token (classic) → tick <strong>repo</strong> scope.</p>
+    <p style="font-size:10px;color:var(--text3);margin-bottom:14px;line-height:1.6">
+      Create a PAT at <a href="https://github.com/settings/tokens" target="_blank" style="color:var(--cyan)">github.com/settings/tokens</a>
+      → Generate new token (classic) → tick <strong>repo</strong> scope.
+    </p>
     <div style="display:flex;gap:8px;flex-wrap:wrap">
       <button class="btn btn-primary btn-sm" id="gh-save-btn">Save & Test Connection</button>
       ${ghOk?'<button class="btn btn-outline btn-sm" id="gh-push-btn">⬆ Push Local Data to GitHub</button>':''}
       ${ghOk?'<button class="btn btn-outline btn-sm" id="gh-pull-btn">⬇ Pull Latest from GitHub</button>':''}
+      ${ghOk?'<button class="btn btn-outline btn-sm" id="gh-clear-btn" style="color:var(--red);border-color:var(--red-border)">✕ Clear Token</button>':''}
     </div>
     <div id="gh-result" style="margin-top:14px"></div>`;
 
   ghCard.querySelector('#gh-save-btn').onclick = async () => {
-    const owner  = ghCard.querySelector('#gh-owner').value.trim();
-    const repo   = ghCard.querySelector('#gh-repo').value.trim();
-    const branch = ghCard.querySelector('#gh-branch').value.trim() || 'main';
-    const token  = ghCard.querySelector('#gh-token').value.trim();
-    const res    = document.getElementById('gh-result');
-    if (!owner||!repo||!token) { res.innerHTML='<div class="alert alert-error">All fields are required.</div>'; return; }
-    saveGHConfig(token, owner, repo, branch);
-    res.innerHTML='<div class="alert alert-info">Testing connection…</div>';
-    // Test by fetching repo info
+    const token = ghCard.querySelector('#gh-token').value.trim();
+    const res   = document.getElementById('gh-result');
+    if (!token) { res.innerHTML='<div class="alert alert-error">Please enter your PAT token.</div>'; return; }
+    if (!token.startsWith('ghp_') && !token.startsWith('github_pat_')) {
+      res.innerHTML='<div class="alert alert-error">This does not look like a valid PAT (should start with ghp_ or github_pat_).</div>'; return;
+    }
+    saveGHConfig(token);
+    res.innerHTML='<div class="alert alert-info">Testing connection to optimaladmin/po-data…</div>';
     try {
-      const r = await fetch(`https://api.github.com/repos/${owner}/${repo}`, {
+      const r = await fetch(`https://api.github.com/repos/${GH_OWNER}/${GH_REPO}`, {
         headers: { 'Authorization': `token ${token}`, 'Accept': 'application/vnd.github.v3+json' }
       });
       if (r.ok) {
-        res.innerHTML='<div class="alert alert-success">✓ Connected successfully! Pushing current data to GitHub…</div>';
+        res.innerHTML='<div class="alert alert-success">✓ Connected! Pushing current data to GitHub…</div>';
         await ghPush();
-        res.innerHTML='<div class="alert alert-success">✓ Connected and data pushed to GitHub. All users will now share the same data.</div>';
+        res.innerHTML='<div class="alert alert-success">✓ Connected and data pushed to GitHub. All users will now share the same data automatically.</div>';
         toast('GitHub storage configured!'); render();
       } else {
         const t = await r.text();
@@ -2305,27 +2359,31 @@ function renderApiSettings() {
   if (ghOk) {
     ghCard.querySelector('#gh-push-btn').onclick = async () => {
       const res = document.getElementById('gh-result');
-      res.innerHTML='<div class="alert alert-info">Pushing data to GitHub… (fetching latest SHA first)</div>';
-      // Always fetch fresh SHA before pushing to avoid conflicts
+      res.innerHTML='<div class="alert alert-info">Pushing data to GitHub…</div>';
       const fetched = await ghFetch();
       if (fetched === null) {
-        res.innerHTML=`<div class="alert alert-error">✗ Cannot reach GitHub — check your token and network.<br>${state._ghError||''}</div>`;
+        res.innerHTML=`<div class="alert alert-error">✗ Cannot reach GitHub — check your token.<br>${state._ghError||''}</div>`;
         return;
       }
       state._ghSha = fetched.sha;
-      const data = { users: state.users, pos: state.pos, archive: state.archive };
-      const ok = await ghWrite(data, state._ghSha);
+      const ok = await ghWrite({ users: state.users, pos: state.pos, archive: state.archive }, state._ghSha);
       res.innerHTML = ok
         ? '<div class="alert alert-success">✓ Data pushed to GitHub successfully.</div>'
-        : `<div class="alert alert-error">✗ Push failed: ${state._ghError||'unknown error — check browser console (F12)'}</div>`;
+        : `<div class="alert alert-error">✗ Push failed: ${state._ghError||'unknown error'}</div>`;
     };
     ghCard.querySelector('#gh-pull-btn').onclick = async () => {
       const res = document.getElementById('gh-result');
       res.innerHTML='<div class="alert alert-info">Pulling latest data from GitHub…</div>';
       const ok = await ghPull();
       res.innerHTML = ok ? '<div class="alert alert-success">✓ Latest data pulled from GitHub.</div>'
-                         : '<div class="alert alert-error">✗ Pull failed — check console for details.</div>';
+                         : `<div class="alert alert-error">✗ Pull failed: ${state._ghError||'unknown error'}</div>`;
       if (ok) render();
+    };
+    ghCard.querySelector('#gh-clear-btn').onclick = () => {
+      if (!confirm('Clear the PAT token from this browser?')) return;
+      localStorage.removeItem('po_gh_token');
+      toast('PAT token cleared from this browser.', 'error');
+      render();
     };
   }
 
@@ -2364,7 +2422,14 @@ function renderApiSettings() {
     if (!val.startsWith('sk-ant-')) { toast('This does not look like a valid Anthropic key (should start with sk-ant-).','error'); return; }
     state.apiKey = val;
     saveState();
-    toast('API key saved successfully!');
+    if (ghConfigured()) {
+      ghPush().then(ok => {
+        if (ok) toast('API key saved and synced to GitHub ✓');
+        else toast('API key saved locally — GitHub sync failed', 'error', 5000);
+      });
+    } else {
+      toast('API key saved successfully!');
+    }
     render();
   };
   if (hasKey) {
