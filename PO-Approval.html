@@ -455,7 +455,7 @@ async function ghWrite(data, sha) {
   const clean = {
     users:   data.users,
     archive: data.archive,
-    apiKey:  state.apiKey || '',
+    apiKey:  localStorage.getItem('po_tool_apikey') || state.apiKey || '',
     ghToken: localStorage.getItem('po_gh_token') || '',
     pos:     (data.pos||[]).map(po => {
       const {approvedPdfB64, originalPdfB64, ...rest} = po;
@@ -626,12 +626,18 @@ async function ghPull() {
   state.pos     = d.pos     || state.pos;
   state.archive = d.archive || state.archive;
   state._ghSha  = result.sha;
-  // Restore API key from GitHub if not set locally
-  if (d.apiKey && !state.apiKey) {
-    state.apiKey = d.apiKey;
+
+  // API key: prefer local (more private), but restore from GitHub if missing locally
+  const localApiKey = localStorage.getItem('po_tool_apikey') || '';
+  if (localApiKey) {
+    state.apiKey = localApiKey; // local wins
+  } else if (d.apiKey) {
+    state.apiKey = d.apiKey; // restore from GitHub
     localStorage.setItem('po_tool_apikey', d.apiKey);
+    console.log('[GH] API key restored from GitHub');
   }
-  // Restore PAT token from GitHub data if not set locally
+
+  // PAT token: restore from GitHub data if not set locally
   if (d.ghToken && !localStorage.getItem('po_gh_token')) {
     localStorage.setItem('po_gh_token', d.ghToken);
     console.log('[GH] PAT token restored from GitHub data');
@@ -2439,7 +2445,7 @@ function renderApiSettings() {
     if (!val) { toast('Please enter an API key.','error'); return; }
     if (!val.startsWith('sk-ant-')) { toast('This does not look like a valid Anthropic key (should start with sk-ant-).','error'); return; }
     state.apiKey = val;
-    saveState();
+    localStorage.setItem('po_tool_apikey', val); // save immediately
     if (ghConfigured()) {
       ghPush().then(ok => {
         if (ok) toast('API key saved and synced to GitHub ✓');
