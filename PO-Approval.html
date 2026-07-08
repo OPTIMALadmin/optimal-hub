@@ -336,12 +336,10 @@ const GH_PDF_FOLDER = 'pdfs';
 const GH_OWNER  = 'optimaladmin';
 const GH_REPO   = 'po-data';
 const GH_BRANCH = 'main';
-const GH_TOKEN_DEFAULT  = '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'; // ← Paste your GitHub PAT here
-const ANTHROPIC_KEY_DEFAULT = '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'; // ← Paste your Anthropic API key here
 
 function getGHConfig() {
   return {
-    token:  localStorage.getItem('po_gh_token') || GH_TOKEN_DEFAULT,
+    token:  localStorage.getItem('po_gh_token') || '',
     owner:  GH_OWNER,
     repo:   GH_REPO,
     branch: GH_BRANCH,
@@ -351,7 +349,7 @@ function saveGHConfig(token) {
   localStorage.setItem('po_gh_token', token);
 }
 function ghConfigured() {
-  return !!(localStorage.getItem('po_gh_token') || GH_TOKEN_DEFAULT);
+  return !!localStorage.getItem('po_gh_token');
 }
 
 function ghApiUrl(path) {
@@ -547,7 +545,7 @@ function loadState() {
     state.users   = s.users   || JSON.parse(JSON.stringify(INITIAL_USERS));
     state.pos     = s.pos     || [];
     state.archive = s.archive || [];
-    state.apiKey  = localStorage.getItem('po_tool_apikey') || ANTHROPIC_KEY_DEFAULT;
+    state.apiKey  = localStorage.getItem('po_tool_apikey') || '';
     state._ghSha  = s._ghSha  || null;
 
     // Only add INITIAL_USERS entries completely absent from saved state
@@ -838,6 +836,19 @@ function renderLogin() {
       <div id="login-err"></div>
       <div class="form-group"><label>Username</label><input type="text" id="lu" placeholder="enter login" autocomplete="username"></div>
       <div class="form-group"><label>Password</label><input type="password" id="lp" placeholder="••••••••••••" autocomplete="current-password"></div>
+      ${!localStorage.getItem('po_gh_token') ? `
+      <div style="border-top:1px solid var(--border);margin:16px 0 14px;padding-top:16px">
+        <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.1em;color:var(--amber);margin-bottom:10px">⚙ First time on this computer</div>
+        <div class="form-group" style="margin-bottom:10px">
+          <label>GitHub PAT Token <span style="color:var(--text3);text-transform:none;letter-spacing:0;font-weight:400">(shared data sync)</span></label>
+          <input type="password" id="lp-gh" placeholder="ghp_xxxxxxxxxxxx">
+        </div>
+        <div class="form-group" style="margin-bottom:4px">
+          <label>Anthropic API Key <span style="color:var(--text3);text-transform:none;letter-spacing:0;font-weight:400">(PDF extraction)</span></label>
+          <input type="password" id="lp-ak" placeholder="sk-ant-...">
+        </div>
+        <p style="font-size:10px;color:var(--text3);margin-bottom:10px;line-height:1.5">Saved to this browser only. Leave blank to configure later in Admin → API Key.</p>
+      </div>` : ''}
       <button class="btn btn-primary" style="width:100%;justify-content:center;padding:10px" onclick="doLogin()">Sign In →</button>
     </div>`;
   page.querySelector('#lp').addEventListener('keydown', e=>{ if(e.key==='Enter') doLogin(); });
@@ -849,6 +860,12 @@ function doLogin() {
   const pass  = document.getElementById('lp')?.value;
   const user  = state.users.find(u=>u.login===login&&u.pass===pass);
   if (!user) { document.getElementById('login-err').innerHTML='<div class="alert alert-error">Invalid username or password.</div>'; return; }
+
+  // Save tokens if entered on first-time setup
+  const ghToken = document.getElementById('lp-gh')?.value.trim();
+  const akToken = document.getElementById('lp-ak')?.value.trim();
+  if (ghToken) localStorage.setItem('po_gh_token', ghToken);
+  if (akToken) { localStorage.setItem('po_tool_apikey', akToken); state.apiKey = akToken; }
 
   state.loggedIn = true; state.currentUser = user; state.page = 'dashboard';
   state.reviewData = null; state.reviewItems = []; state.modal = null;
