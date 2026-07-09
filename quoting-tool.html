@@ -414,6 +414,7 @@ body{background:var(--bg);color:var(--text);font-family:var(--body);min-height:1
           <div class="progress-label" id="progress-label">Initialising…</div>
         </div>
         <div id="file-badge-wrap"></div>
+        <div id="geom-type-badge" style="display:none;margin-top:8px"></div>
         <div id="occ-error-box" style="display:none;margin-top:8px;padding:8px 12px;background:rgba(239,68,68,.08);border:1px solid rgba(239,68,68,.3);border-radius:5px;font-family:var(--mono);font-size:13px;color:#ef4444;word-break:break-all;line-height:1.6"></div>
       </div>
     </div>
@@ -921,6 +922,37 @@ function loadMeshIntoViewer(pos,nor,idx,aabb,obb){
 // ══════════════════════════════════════════
 //  FILE HANDLING
 // ══════════════════════════════════════════
+// ── STEP GEOMETRY TYPE DETECTION ──
+function detectStepType(text) {
+  const counts = {};
+  for(const line of text.split('\n')){
+    const m = line.match(/^#\d+\s*=\s*([A-Z_][A-Z_0-9]*)\s*\(/);
+    if(m){ const t=m[1]; counts[t]=(counts[t]||0)+1; }
+  }
+  if((counts['MANIFOLD_SOLID_BREP']||0) > 0 || (counts['BREP_WITH_VOIDS']||0) > 0)
+    return { type:'SOLID', detail:`${counts['MANIFOLD_SOLID_BREP']||0} solid body(ies) — volume computable`, icon:'⬛', color:'var(--success)' };
+  if((counts['OPEN_SHELL']||0) > 0 || (counts['SHELL_BASED_SURFACE_MODEL']||0) > 0)
+    return { type:'OPEN SHELL', detail:`${counts['OPEN_SHELL']||0} open shell(s) — surface area only, no enclosed volume`, icon:'🔲', color:'var(--warning)' };
+  if((counts['CLOSED_SHELL']||0) > 0)
+    return { type:'CLOSED SHELL', detail:`${counts['CLOSED_SHELL']||0} closed shell(s) — surface + approximate volume`, icon:'🔳', color:'#60a5fa' };
+  if((counts['GEOMETRIC_SET']||0) > 0)
+    return { type:'SURFACE / WIREFRAME', detail:'Geometric set — surfaces or wireframe only', icon:'📐', color:'#a78bfa' };
+  return { type:'UNKNOWN', detail:'Geometry type could not be determined from STEP entities', icon:'❓', color:'var(--text-dim)' };
+}
+
+function showGeomTypeBadge(geomType) {
+  const el = document.getElementById('geom-type-badge');
+  if(!el) return;
+  el.style.display = 'block';
+  el.innerHTML = `<div style="display:flex;align-items:center;gap:8px;padding:7px 12px;border-radius:5px;border:1px solid ${geomType.color}33;background:${geomType.color}11">
+    <span style="font-size:16px">${geomType.icon}</span>
+    <div>
+      <span style="font-family:var(--mono);font-size:12px;font-weight:600;color:${geomType.color};letter-spacing:.5px">${geomType.type}</span>
+      <span style="font-family:var(--mono);font-size:11px;color:var(--text-dim);margin-left:8px">${geomType.detail}</span>
+    </div>
+  </div>`;
+}
+
 function handleFileSelect(e){if(e.target.files[0])processStepFile(e.target.files[0]);}
 function handleFileDrop(e){e.preventDefault();document.getElementById('upload-zone').classList.remove('drag-over');if(e.dataTransfer.files[0])processStepFile(e.dataTransfer.files[0]);}
 
@@ -950,6 +982,12 @@ async function processStepFile(file){
   try{
     const buf=await file.arrayBuffer();
     const u8=new Uint8Array(buf);
+
+    // Detect geometry type from STEP entity types (works on raw text, fast)
+    const stepText = new TextDecoder().decode(u8);
+    const geomType = detectStepType(stepText);
+    showGeomTypeBadge(geomType);
+
     if(occtReady&&occt){
       sp(25,'Parsing STEP geometry…');
       const res=occt.ReadStepFile(u8,null);
@@ -1103,6 +1141,7 @@ function clearGeo(){
   ['area','perimeter','pn'].forEach(id=>document.getElementById(id).value='');
   ['aabb-x','aabb-y','aabb-z','aabb-vol','obb-d1','obb-d2','obb-d3','obb-vol','vol-reduction','sum-area','sum-perim','sum-faces'].forEach(id=>document.getElementById(id).textContent='—');
   document.getElementById('file-badge-wrap').innerHTML='';
+  const gtb=document.getElementById('geom-type-badge'); if(gtb)gtb.style.display='none';
 }
 function recalc(){
   const a=parseFloat(document.getElementById('area').value)||0;
