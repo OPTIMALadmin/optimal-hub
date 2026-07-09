@@ -523,11 +523,24 @@ function ghPdfUrl(filename) {
 async function ghDownloadPDF(filename) {
   if (!ghConfigured()) return false;
   try {
-    const result = await ghFetchFile(`${GH_PDF_FOLDER}/${filename}`);
-    if (!result || !result.raw) { toast('PDF not found in GitHub storage.', 'error'); return false; }
+    // Try pdfs/ folder first, then root, then as-is path
+    const paths = [
+      `${GH_PDF_FOLDER}/${filename}`,
+      filename,
+    ];
+    let result = null;
+    for (const path of paths) {
+      result = await ghFetchFile(path);
+      if (result && result.raw) break;
+      result = null;
+    }
+    if (!result || !result.raw) {
+      toast('PDF not found in GitHub storage — it may have been approved before PDF storage was enabled.', 'error', 7000);
+      return false;
+    }
     const link = document.createElement('a');
     link.href = 'data:application/pdf;base64,' + result.raw;
-    link.download = filename;
+    link.download = filename.split('/').pop(); // just the filename part
     link.click();
     return true;
   } catch(e) {
@@ -1541,20 +1554,41 @@ function renderPODetail() {
       dlBtn.onclick = async () => {
         dlBtn.disabled = true;
         dlBtn.textContent = 'Downloading…';
+        let downloaded = false;
+
+        // Try GitHub first
         if (po.approvedPdfFilename && ghConfigured()) {
-          const ok = await ghDownloadPDF(po.approvedPdfFilename);
-          if (!ok && po.approvedPdfB64) {
-            const link = document.createElement('a');
-            link.href = 'data:application/pdf;base64,' + po.approvedPdfB64;
-            link.download = po.approvedPdfFilename || `PO_${po.id}_APPROVED.pdf`;
-            link.click();
-          }
-        } else if (po.approvedPdfB64) {
-          const link = document.createElement('a');
-          link.href = 'data:application/pdf;base64,' + po.approvedPdfB64;
-          link.download = po.approvedPdfFilename || `PO_${po.id}_APPROVED.pdf`;
-          link.click();
+          downloaded = await ghDownloadPDF(po.approvedPdfFilename);
         }
+
+        // If not found in GitHub, regenerate the PDF and save it
+        if (!downloaded) {
+          dlBtn.textContent = 'Regenerating PDF…';
+          try {
+            const approver = state.users.find(u => u.id === po.approvedBy);
+            const approvedNames = (po.approvals||[]).map(l => state.users.find(u=>u.login===l)?.name||l).join(', ') || approver?.name || 'Unknown';
+            const newPdfB64 = await generateApprovedPDF(po, approvedNames, po.approvedAt);
+            if (newPdfB64) {
+              // Save to GitHub for future downloads
+              const filename = po.approvedPdfFilename || `PO_${(po.poNumber||po.id).replace(/[^a-zA-Z0-9]/g,'_')}_APPROVED.pdf`;
+              po.approvedPdfFilename = filename;
+              if (ghConfigured()) {
+                await ghSavePDF(newPdfB64, filename);
+                saveState();
+              }
+              // Download directly
+              const link = document.createElement('a');
+              link.href = 'data:application/pdf;base64,' + newPdfB64;
+              link.download = filename;
+              link.click();
+              toast('PDF regenerated and saved to GitHub ✓');
+              downloaded = true;
+            }
+          } catch(e) {
+            toast('Failed to regenerate PDF: ' + e.message, 'error');
+          }
+        }
+
         dlBtn.disabled = false;
         dlBtn.innerHTML = '⬇ Download Approved PDF';
       };
