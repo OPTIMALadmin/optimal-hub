@@ -501,14 +501,14 @@ async function ghWrite(data, sha) {
 }
 
 // ---- PDF storage ----
-// Save approved PDF to pdfs/<filename>.pdf in the repo
+// Save a PDF to GitHub — filename can include subfolder (e.g. 'originals/file.pdf')
 async function ghSavePDF(pdfB64, filename) {
   if (!ghConfigured() || !pdfB64) return false;
-  const path = `${GH_PDF_FOLDER}/${filename}`;
-  // Check if file exists (to get SHA for update)
+  // If filename already contains a /, use as-is; otherwise prepend pdfs/
+  const path = filename.includes('/') ? filename : `${GH_PDF_FOLDER}/${filename}`;
   const existing = await ghFetchFile(path);
   const sha = existing?.sha || null;
-  const newSha = await ghWriteFile(path, pdfB64, sha, `Approved PDF: ${filename}`);
+  const newSha = await ghWriteFile(path, pdfB64, sha, `PDF: ${filename}`);
   return !!newSha;
 }
 
@@ -1335,11 +1335,22 @@ function confirmCreatePO() {
     source: state.reviewSource,
     originalPdfB64:  state.reviewSource === 'pdf' ? state.reviewPdfB64  : null,
     originalPdfName: state.reviewSource === 'pdf' ? state.reviewPdfName : null,
+    originalPdfFile: state.reviewSource === 'pdf' ? `originals/${uid()}_original.pdf` : null,
   };
 
   state.pos.unshift(po);
   addEvent('created', po.id, state.currentUser.id, `PO ${po.poNumber||po.id} created via ${state.reviewSource==='pdf'?'PDF':'manual entry'} (${po.currency} ${po.total})`);
   saveState();
+
+  // Save original PDF to GitHub storage if available
+  if (po.originalPdfFile && state.reviewPdfB64 && ghConfigured()) {
+    ghSavePDF(state.reviewPdfB64, po.originalPdfFile)
+      .then(ok => {
+        if (ok) console.log('[GH] Original PDF saved:', po.originalPdfFile);
+        else console.warn('[GH] Failed to save original PDF to GitHub');
+      });
+  }
+
   state.reviewData=null; state.reviewItems=[]; state.reviewSource=null;
   state.reviewPdfB64=null; state.reviewPdfName=null;
   state.page='po-detail'; state.currentPO=po.id;
@@ -1679,10 +1690,27 @@ Please log in to the PO Approval Tool to review and approve or reject this PO.
 async function generateApprovedPDF(po, approverName, approvedAt) {
   const { PDFDocument, rgb, degrees, StandardFonts, PageSizes } = PDFLib;
 
-  // Use original PDF if available, otherwise create a simple summary PDF
+  // Use original PDF if available in memory, otherwise try fetching from GitHub
   let pdfDoc;
-  if (po.originalPdfB64) {
-    const pdfBytes = Uint8Array.from(atob(po.originalPdfB64), c => c.charCodeAt(0));
+  let originalB64 = po.originalPdfB64;
+
+  if (!originalB64 && po.originalPdfFile && ghConfigured()) {
+    console.log('[PDF] Fetching original PDF from GitHub:', po.originalPdfFile);
+    try {
+      const result = await ghFetchFile(po.originalPdfFile);
+      if (result && result.raw) {
+        originalB64 = result.raw;
+        console.log('[PDF] Original PDF fetched from GitHub successfully');
+      }
+    } catch(e) {
+      console.warn('[PDF] Could not fetch original PDF from GitHub:', e);
+    }
+  }
+
+  if (originalB64) {
+    const binaryStr = atob(originalB64);
+    const pdfBytes = new Uint8Array(binaryStr.length);
+    for (let i = 0; i < binaryStr.length; i++) pdfBytes[i] = binaryStr.charCodeAt(i);
     pdfDoc = await PDFDocument.load(pdfBytes, { ignoreEncryption: true });
   } else {
     // No original PDF — build a simple one-page summary
