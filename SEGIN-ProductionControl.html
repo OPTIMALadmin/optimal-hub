@@ -492,6 +492,32 @@
   loginUser.addEventListener('keydown', (e) => { if (e.key === 'Enter') attemptLogin(); });
   loginPass.addEventListener('keydown', (e) => { if (e.key === 'Enter') attemptLogin(); });
 
+  // ---------- temporary debug helper (call ttDebugStart() in the browser console) ----------
+  window.__ttDebug = false;
+  window.__ttDebugLog = [];
+  window.ttDebugStart = function(){
+    window.__ttDebug = true;
+    window.__ttDebugLog = [];
+    console.log('Debug logging ON. Now switch to the day in question, then run ttDebugReport().');
+  };
+  window.ttDebugReport = function(){
+    const log = window.__ttDebugLog;
+    const withEntry = log.filter(r => r.entry).length;
+    console.log('Rendered ' + log.length + ' operator rows. ' + withEntry + ' had a timetrack entry for this day.');
+    console.log('Full detail (first 10 rows):', log.slice(0, 10));
+    console.log('Rows with NO timetrack day-match (first 10):', log.filter(r => !r.entry).slice(0, 10));
+    return log;
+  };
+  window.ttDebugKeys = function(operatorName){
+    const key = normalize(operatorName || (window.__ttDebugLog[0] && window.__ttDebugLog[0].op) || '');
+    const dayMap = timetrackData ? timetrackData.get(key) : null;
+    console.log('Currently selected day (daySelect.value):', JSON.stringify(daySelect.value));
+    if (!dayMap){ console.log('No timetrack entry found at all for name key:', JSON.stringify(key)); return; }
+    const keys = [...dayMap.keys()];
+    console.log('Day-keys actually stored for "' + key + '" (' + keys.length + ' total):', keys);
+    console.log('Does it include the currently selected day?', keys.includes(daySelect.value));
+  };
+
   const fileInput = document.getElementById('fileInput');
   const daySelect = document.getElementById('daySelect');
   const displayToggle = document.getElementById('displayToggle');
@@ -540,9 +566,22 @@
     return null;
   }
 
+  // SheetJS's cellDates:true option builds Date objects using the *local*
+  // timezone of whatever machine runs it — so the exact same spreadsheet cell
+  // yields a different underlying instant depending on the viewer's system
+  // timezone. Since we always read dates back out with UTC getters (to stay
+  // consistent regardless of viewer timezone), we re-anchor every Date coming
+  // out of SheetJS here: take its wall-clock components (as SheetJS meant
+  // them, via local getters) and rebuild it as that same wall-clock time
+  // expressed in UTC. This makes every date value timezone-independent.
+  function normalizeSheetDate(d){
+    if (!(d instanceof Date) || isNaN(d.getTime())) return d;
+    return new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate(), d.getHours(), d.getMinutes(), d.getSeconds(), d.getMilliseconds()));
+  }
+
   function parseDateVal(v){
     if (v === null || v === undefined || v === '') return null;
-    if (v instanceof Date) return isNaN(v.getTime()) ? null : v;
+    if (v instanceof Date) return isNaN(v.getTime()) ? null : normalizeSheetDate(v);
     if (typeof v === 'number'){
       const ms = Math.round((v - 25569) * 86400 * 1000);
       const d = new Date(ms);
@@ -738,6 +777,29 @@
     return (h * 60 + min) / 1440;
   }
 
+  function parseTimetrackDate(v){
+    if (v instanceof Date) return normalizeSheetDate(v);
+    if (typeof v === 'number'){
+      const ms = Math.round((v - 25569) * 86400 * 1000);
+      return new Date(ms);
+    }
+    if (typeof v === 'string'){
+      const s = v.trim();
+      // YYYY-MM-DD or YYYY/MM/DD — force UTC explicitly
+      let m = s.match(/^(\d{4})[-\/](\d{1,2})[-\/](\d{1,2})/);
+      if (m) return new Date(Date.UTC(+m[1], +m[2]-1, +m[3]));
+      // DD-MM-YYYY or DD/MM/YYYY — force UTC explicitly
+      m = s.match(/^(\d{1,2})[-\/](\d{1,2})[-\/](\d{4})/);
+      if (m) return new Date(Date.UTC(+m[3], +m[2]-1, +m[1]));
+      // last resort: let the browser parse it (may use local time), then
+      // re-express that SAME calendar day as UTC midnight, so a shift from
+      // local-time parsing can never move it into a different day.
+      const d = new Date(s);
+      if (!isNaN(d.getTime())) return new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
+    }
+    return null;
+  }
+
   function processTimetrackRows(rows, filename){
     if (!rows || !rows.length){ timetrackStatus.textContent = 'File has no rows.'; return; }
     const headers = Object.keys(rows[0]);
@@ -760,8 +822,10 @@
       const name = r[colName];
       const date = r[colDate];
       if (!name || !date) continue;
+      const parsedDate = parseTimetrackDate(date);
+      if (!parsedDate) continue;
       const key = normalize(name);
-      const dKey = dayKeyUTC(date instanceof Date ? date : new Date(date));
+      const dKey = dayKeyUTC(parsedDate);
       if (!map.has(key)) map.set(key, new Map());
       const dayMap = map.get(key);
       if (!dayMap.has(dKey)) dayMap.set(dKey, { ins: [], outs: [] });
@@ -1129,6 +1193,7 @@
       if (timetrackData){
         const ttDay = timetrackData.get(normalize(opInfo.name));
         const entry = ttDay ? ttDay.get(dayKey) : null;
+        if (window.__ttDebug) window.__ttDebugLog.push({op: opInfo.name, norm: normalize(opInfo.name), hasTtDay: !!ttDay, dayKey, entry: entry ? JSON.parse(JSON.stringify(entry)) : null});
         if (entry){
           const insToShow = showAllClockMarks
             ? entry.ins
