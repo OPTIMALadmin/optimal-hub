@@ -150,7 +150,7 @@
   .legend .swatch{ width:11px; height:11px; border-radius:3px; flex:none; }
   .swatch.idle{ background: var(--idle-stripe); border:1px solid var(--border); }
 
-  .cols{ grid-template-columns: 190px 62px 62px 62px 68px 58px 1fr; }
+  .cols{ grid-template-columns: 190px 62px 62px 62px 68px 58px 68px 58px 1fr; }
 
   .grid-head-wrap{
     margin: 0 28px; border: 1px solid var(--border); border-bottom:none;
@@ -187,6 +187,8 @@
   .time-cell.c3{ left:314px; }
   .time-cell.c4{ left:376px; }
   .time-cell.c5{ left:444px; }
+  .time-cell.c6{ left:502px; }
+  .time-cell.c7{ left:570px; }
   .time-cell.emphasis{ color: var(--text); font-weight:500; }
   .time-cell.empty{ color: var(--text-faint); }
   .ruler{
@@ -343,6 +345,83 @@
   }
   .clock-mark-legend.in{ border-top:8px solid #4fbf8b; }
   .clock-mark-legend.out{ border-top:8px solid #f2a93b; }
+
+  /* ---------- Tabs ---------- */
+  .main-tabs{
+    display:flex; gap:4px; padding: 0 28px; border-bottom:1px solid var(--border); background: var(--bg);
+  }
+  .main-tab{
+    background:none; border:none; color: var(--text-dim); font-family:'IBM Plex Mono', monospace;
+    font-size:12px; letter-spacing:.06em; text-transform:uppercase; padding:11px 16px; cursor:pointer;
+    border-bottom:2px solid transparent; margin-bottom:-1px;
+  }
+  .main-tab.active{ color: var(--accent); border-bottom-color: var(--accent); }
+  .main-tab:hover:not(.active){ color: var(--text); }
+
+  .sub-tabs{ display:flex; gap:6px; padding: 16px 28px 0; }
+  .sub-tab{
+    background: var(--panel-alt); border:1px solid var(--border); border-bottom:none; color: var(--text-dim);
+    font-family:'IBM Plex Mono', monospace; font-size:11px; padding:8px 16px; border-radius:6px 6px 0 0; cursor:pointer;
+  }
+  .sub-tab.active{ background: var(--panel); color: var(--text); }
+
+  /* ---------- Overview matrix (Admin tab) ---------- */
+  #overviewEmpty{ padding:70px 28px; color: var(--text-dim); font-size:13px; max-width:420px; }
+  #overviewWrap{ padding-bottom: 30px; }
+  .matrix-scroll{
+    margin: 14px 28px 0; overflow:auto; max-height: calc(100vh - 300px);
+    border:1px solid var(--border); border-radius:10px; background: var(--panel);
+  }
+  .matrix-grid{ display:grid; }
+  .ov-corner{
+    position:sticky; top:0; left:0; z-index:5; background: var(--panel-alt);
+    border-bottom:1px solid var(--border); border-right:1px solid var(--border);
+  }
+  .ov-day-header{
+    position:sticky; top:0; z-index:3; background: var(--panel-alt);
+    border-bottom:1px solid var(--border); border-right:1px solid var(--border-soft);
+    display:flex; align-items:center; justify-content:center; font-size:9px;
+    font-family:'IBM Plex Mono', monospace; color: var(--text-faint); padding:6px 1px; text-align:center; line-height:1.25;
+  }
+  .ov-row-label{
+    position:sticky; left:0; z-index:2; background: var(--panel);
+    border-right:1px solid var(--border); border-bottom:1px solid var(--border-soft);
+    padding:6px 12px; font-size:12px; color: var(--text); white-space:nowrap; display:flex; align-items:center;
+  }
+  .ov-group-header{
+    grid-column: 1/-1; background: var(--panel-alt); border-top:1px solid var(--border); border-bottom:1px solid var(--border);
+    padding:6px 12px; font-size:11px; font-weight:600; letter-spacing:.1em; text-transform:uppercase;
+    color: var(--accent); font-family:'IBM Plex Mono', monospace; position:sticky; left:0;
+  }
+  .ov-cell{
+    border-right:1px solid var(--border-soft); border-bottom:1px solid var(--border-soft);
+    display:flex; align-items:center; justify-content:center; padding:3px;
+  }
+  .ov-cell .dot{ width:100%; height:16px; border-radius:3px; position:relative; display:flex; align-items:center; justify-content:center; }
+  .ov-cell-hrs{
+    font-family:'IBM Plex Mono', monospace; font-size:8px; font-weight:600; color: rgba(0,0,0,0.65); line-height:1;
+  }
+  .ov-cell .dot.green{ background:#4fbf8b; }
+  .ov-cell .dot.orange{ background:#f2a93b; }
+  .ov-cell .dot.red{ background:#e8598b; opacity:.55; }
+  .ov-swatch{ width:11px; height:11px; border-radius:3px; display:inline-block; }
+  .ov-swatch.orange{ background:#f2a93b; }
+  .ov-swatch.red{ background:#e8598b; }
+
+  .ov-cell-num{ font-family:'IBM Plex Mono', monospace; font-size:12px; color: var(--text-faint); }
+  .ov-cell-num.has-value{ color: var(--text); font-weight:600; }
+  .proj-select-row{ display:flex; align-items:center; gap:10px; padding: 14px 28px 0; }
+  .proj-select-row .dt-label{ font-size:10px; text-transform:uppercase; letter-spacing:.1em; color:var(--text-faint); }
+  .proj-select-row select{
+    background: var(--panel-alt); border:1px solid var(--border); color:var(--text);
+    padding: 8px 12px; border-radius: var(--radius); font-size:13px; font-family:'IBM Plex Mono', monospace; min-width:260px;
+  }
+  .metric-toggle{ display:flex; gap:6px; }
+  .metric-btn{
+    background: var(--panel-alt); border:1px solid var(--border); color: var(--text-dim);
+    font-family:'IBM Plex Mono', monospace; font-size:11px; padding:8px 12px; border-radius: 20px; cursor:pointer;
+  }
+  .metric-btn.active{ background: rgba(242,169,59,0.15); border-color: var(--accent); color: var(--text); }
 </style>
 
 </head>
@@ -388,6 +467,11 @@
     </div>
   </div>
 </header>
+
+<nav class="main-tabs" id="mainTabs">
+  <button type="button" class="main-tab active" data-tab="occupancy">Occupancy</button>
+  <button type="button" class="main-tab" data-tab="admin" id="adminTabBtn" style="display:none;">Admin</button>
+</nav>
 
 <div class="toolbar" id="toolbar">
     
@@ -452,6 +536,7 @@
 </div>
 </div>
 
+<div id="viewOccupancy">
 <div id="errorMsg"></div>
 
 <div id="emptyState">
@@ -469,6 +554,53 @@
 </div>
 
 <footer id="footer">Times are shown as recorded in the file (no timezone conversion applied). Tasks crossing midnight are split across each day they touch.</footer>
+</div>
+
+<div id="viewAdmin" style="display:none;">
+  <nav class="sub-tabs" id="adminSubTabs">
+    <button type="button" class="sub-tab active" data-subtab="overview">Overview</button>
+    <button type="button" class="sub-tab" data-subtab="projects">Projects</button>
+  </nav>
+
+  <div id="adminSubviewOverview">
+    <div id="overviewEmpty">
+      <p>Load SEGIN data on the Occupancy tab first — this matrix is built from the same file.</p>
+    </div>
+    <div id="overviewWrap" style="display:none;">
+      <div class="legend" style="padding:14px 28px 0;">
+        <div class="item"><span class="signal green"></span> Filed correctly (meets traffic-light criteria)</div>
+        <div class="item"><span class="ov-swatch orange"></span> Filed, but doesn't meet criteria</div>
+        <div class="item"><span class="ov-swatch red"></span> No information filed</div>
+      </div>
+      <div class="matrix-scroll" id="overviewScroll">
+        <div class="matrix-grid" id="overviewGrid"></div>
+      </div>
+    </div>
+  </div>
+
+  <div id="adminSubviewProjects" style="display:none;">
+    <div id="projectsEmpty">
+      <p>Load SEGIN data on the Occupancy tab first — this matrix is built from the same file.</p>
+    </div>
+    <div id="projectsWrap" style="display:none;">
+      <div class="proj-select-row">
+        <span class="dt-label">Project</span>
+        <select id="projectSelect"></select>
+        <span class="dt-label" style="margin-left:14px;">Posto de Trabalho</span>
+        <select id="postoSelect"></select>
+        <span class="dt-label" style="margin-left:14px;">Show</span>
+        <div class="metric-toggle" id="metricToggle">
+          <button type="button" class="metric-btn active" data-metric="parts">Parts</button>
+          <button type="button" class="metric-btn" data-metric="hours">Hours</button>
+          <button type="button" class="metric-btn" data-metric="avgHours">Avg/Part (h)</button>
+        </div>
+      </div>
+      <div class="matrix-scroll" id="projectsScroll">
+        <div class="matrix-grid" id="projectsGrid"></div>
+      </div>
+    </div>
+  </div>
+</div>
 
 <div id="tooltip"></div>
 
@@ -490,11 +622,14 @@
     cornerDate.textContent = new Date().toLocaleDateString('en-GB', { day:'2-digit', month:'2-digit', year:'numeric' });
   }
 
+  let loggedInUser = null;
   function attemptLogin(){
-    const ok = VALID_CREDENTIALS.some(c => c.user === loginUser.value && c.pass === loginPass.value);
-    if (ok){
+    const match = VALID_CREDENTIALS.find(c => c.user === loginUser.value && c.pass === loginPass.value);
+    if (match){
+      loggedInUser = match.user;
       loginGate.classList.add('hidden');
       loginError.classList.remove('visible');
+      document.getElementById('adminTabBtn').style.display = (loggedInUser === 'admin') ? 'block' : 'none';
     } else {
       loginError.classList.add('visible');
       loginPass.value = '';
@@ -652,7 +787,7 @@
     return isNaN(n) ? null : n;
   }
   function computeStatus(opTasks){
-    if (!opTasks.length) return { color:'red', reason:'No activity logged for this day.', first:null, last:null, gapHrs:null, allocHrs:null, pct:null };
+    if (!opTasks.length) return { color:'red', reason:'No activity logged for this day.', first:null, last:null, gapHrs:null, allocHrs:null, pct:null, continuesNextDay:false };
     let first = opTasks[0].cs, last = opTasks[0].ce;
     for (const t of opTasks){
       if (t.cs < first) first = t.cs;
@@ -675,10 +810,279 @@
     const gapHrs = (last - first) / 3600000;
     const allocHrs = allocatedMs / 3600000;
     const pct = gapHrs > 0 ? (allocHrs / gapHrs) * 100 : 100;
-    const green = gapHrs >= 8.5 && gapHrs <= 12 && pct > 90;
-    const reason = `Span ${fmtHM(first)}–${fmtHM(last)} (${gapHrs.toFixed(1)}h) · ${pct.toFixed(0)}% allocated`
-      + (green ? '' : (gapHrs < 8.5 || gapHrs > 12 ? ' · span outside 8.5–12h' : ' · under 90% allocated'));
-    return { color: green ? 'green' : 'red', reason, first, last, gapHrs, allocHrs, pct };
+    // if any task is still running past this day's boundary (i.e. it got
+    // clipped on the end side — its real end time is later than this day),
+    // the operator's day never actually closed out, so it can't be green
+    // no matter what the span/allocation numbers say.
+    const continuesNextDay = opTasks.some(t => t.ce.getTime() !== t.end.getTime());
+    const green = gapHrs >= 8.5 && gapHrs <= 12 && pct > 90 && !continuesNextDay;
+    let reasonExtra;
+    if (green) reasonExtra = '';
+    else if (continuesNextDay) reasonExtra = ' · still logging hours past the end of the day';
+    else if (gapHrs < 8.5 || gapHrs > 12) reasonExtra = ' · span outside 8.5–12h';
+    else reasonExtra = ' · under 90% allocated';
+    const reason = `Span ${fmtHM(first)}–${fmtHM(last)} (${gapHrs.toFixed(1)}h) · ${pct.toFixed(0)}% allocated` + reasonExtra;
+    return { color: green ? 'green' : 'red', reason, first, last, gapHrs, allocHrs, pct, continuesNextDay };
+  }
+
+  function renderOverviewMatrix(){
+    const overviewEmpty = document.getElementById('overviewEmpty');
+    const overviewWrap = document.getElementById('overviewWrap');
+    if (!allTasks.length || !operators.length || !allDays.length){
+      overviewEmpty.style.display = 'block';
+      overviewWrap.style.display = 'none';
+      return;
+    }
+    overviewEmpty.style.display = 'none';
+    overviewWrap.style.display = 'block';
+
+    // group this operator's tasks once, rather than re-filtering the whole
+    // task list for every operator/day combination
+    const tasksByOp = new Map();
+    for (const t of allTasks){
+      if (!tasksByOp.has(t.op)) tasksByOp.set(t.op, []);
+      tasksByOp.get(t.op).push(t);
+    }
+
+    const grid = document.getElementById('overviewGrid');
+    grid.innerHTML = '';
+    grid.style.gridTemplateColumns = '190px repeat(' + allDays.length + ', 28px)';
+
+    const corner = document.createElement('div');
+    corner.className = 'ov-corner';
+    corner.textContent = 'Operator';
+    grid.appendChild(corner);
+
+    for (const dKey of allDays){
+      const h = document.createElement('div');
+      h.className = 'ov-day-header';
+      const d = dayStartUTC(dKey);
+      h.innerHTML = String(d.getUTCDate()).padStart(2,'0') + '<br>' + d.toLocaleDateString('en-GB', {month:'short', timeZone:'UTC'});
+      h.title = fmtDayLabel(dKey);
+      grid.appendChild(h);
+    }
+
+    let lastGroup = null;
+    for (const opInfo of operators){
+      if (opInfo.group !== lastGroup){
+        lastGroup = opInfo.group;
+        const gh = document.createElement('div');
+        gh.className = 'ov-group-header';
+        gh.textContent = opInfo.groupLabel + ' team';
+        grid.appendChild(gh);
+      }
+
+      const label = document.createElement('div');
+      label.className = 'ov-row-label';
+      label.textContent = opInfo.name;
+      grid.appendChild(label);
+
+      const opTasksAll = tasksByOp.get(opInfo.name) || [];
+
+      for (const dKey of allDays){
+        const dStart = dayStartUTC(dKey);
+        const dEnd = addDaysUTC(dStart, 1);
+        const clipped = opTasksAll.map(t => {
+          const cs = t.start < dStart ? dStart : t.start;
+          const ce = t.end > dEnd ? dEnd : t.end;
+          if (ce <= cs) return null;
+          return {...t, cs, ce};
+        }).filter(Boolean).sort((a,b)=>a.cs-b.cs);
+
+        // clock in/out data for this operator/day, if a timetrack file has
+        // been loaded — used both for the color logic below and the hours
+        // number shown on the cell
+        let ttEntry = null;
+        if (timetrackData){
+          const ttDay = timetrackData.get(normalize(opInfo.name));
+          ttEntry = ttDay ? ttDay.get(dKey) : null;
+        }
+        const hasClockData = ttEntry && (ttEntry.ins.length || ttEntry.outs.length);
+
+        let color, reason;
+        if (!clipped.length){
+          if (hasClockData){
+            color = 'orange';
+            reason = 'Clocked in/out at OPTIMAL, but no project/task registered';
+          } else {
+            color = 'red';
+            reason = 'No information filed';
+          }
+        } else {
+          const st = computeStatus(clipped);
+          color = st.color === 'green' ? 'green' : 'orange';
+          reason = st.reason;
+        }
+
+        // hours physically in the company that day (OPTIMAL clock in/out),
+        // shown as a number on top of the color — only available if the
+        // timetrack file has been loaded
+        let companyHrs = null;
+        if (ttEntry && ttEntry.ins.length && ttEntry.outs.length){
+          companyHrs = ttSpanHours(ttEntry);
+        }
+
+        const cell = document.createElement('div');
+        cell.className = 'ov-cell';
+        const dot = document.createElement('div');
+        dot.className = 'dot ' + color;
+        dot.title = opInfo.name + ' — ' + fmtDayLabel(dKey) + ': ' + reason + (companyHrs !== null ? ' · ' + companyHrs.toFixed(1) + 'h in company' : '');
+        if (companyHrs !== null){
+          const num = document.createElement('span');
+          num.className = 'ov-cell-hrs';
+          num.textContent = companyHrs.toFixed(1);
+          dot.appendChild(num);
+        }
+        cell.appendChild(dot);
+        grid.appendChild(cell);
+      }
+    }
+  }
+
+  // Merge project-code variants that only differ by a trailing suffix, e.g.
+  // "P25003_ABRIL" / "P25003_JULY" / "P25003_MNT" all become "P25003". Only
+  // triggers for names that start with a recognizable P##### code — anything
+  // else (a full descriptive name with no code prefix) is left untouched.
+  function normalizeProjectName(raw){
+    const s = (raw || '').trim();
+    const m = s.match(/^(P\d{4,6})(?=[\s_-]|$)/i);
+    return m ? m[1].toUpperCase() : s;
+  }
+
+  // Resolves the actual Date instant of an operator's last clock-out on a
+  // given day (midnight-aware, so a night shift's clock-out the next
+  // morning still resolves to the correct real instant). Returns null if no
+  // timetrack file is loaded or there's no clock-out on record for that day.
+  function getClockOutInstant(opName, dKey){
+    if (!timetrackData) return null;
+    const ttDay = timetrackData.get(normalize(opName));
+    const entry = ttDay ? ttDay.get(dKey) : null;
+    if (!entry || !entry.outsAdj.length) return null;
+    const maxOutAdj = Math.max(...entry.outsAdj);
+    const dStart = dayStartUTC(dKey);
+    return new Date(dStart.getTime() + maxOutAdj * 86400000);
+  }
+
+  function renderProjectsMatrix(){
+    const projectsEmpty = document.getElementById('projectsEmpty');
+    const projectsWrap = document.getElementById('projectsWrap');
+    if (!allTasks.length || !operators.length || !allDays.length){
+      projectsEmpty.style.display = 'block';
+      projectsWrap.style.display = 'none';
+      return;
+    }
+    projectsEmpty.style.display = 'none';
+    projectsWrap.style.display = 'block';
+
+    const select = document.getElementById('projectSelect');
+    if (!select.dataset.built){
+      const projects = [...new Set(allTasks.map(t => normalizeProjectName(t.project)).filter(Boolean))].sort((a,b) => a.localeCompare(b));
+      select.innerHTML = projects.map(p => `<option value="${escapeHtml(p)}">${escapeHtml(p)}</option>`).join('');
+      select.dataset.built = '1';
+      select.addEventListener('change', renderProjectsMatrix);
+    }
+    const selectedProject = select.value;
+
+    const postoSelect = document.getElementById('postoSelect');
+    if (!postoSelect.dataset.built){
+      const postos = [...new Set(allTasks.map(t => (t.posto || '').trim()).filter(Boolean))].sort((a,b) => a.localeCompare(b));
+      postoSelect.innerHTML = '<option value="__ALL__">ALL</option>' + postos.map(p => `<option value="${escapeHtml(p)}">${escapeHtml(p)}</option>`).join('');
+      postoSelect.dataset.built = '1';
+      postoSelect.addEventListener('change', renderProjectsMatrix);
+    }
+    const selectedPosto = postoSelect.value;
+
+    // sum parts produced + hours logged per operator/day for the selected
+    // project + workstation (or every workstation, if "ALL" is selected) —
+    // attributed to the calendar day the task started on (a "parts made"
+    // total isn't meaningfully split across a task that happens to cross midnight).
+    // If a task was left open after the operator actually clocked out, any
+    // hours logged past that clock-out time are excluded from the hours
+    // total (and therefore from the average-per-part calculation) — parts
+    // produced are still counted in full either way.
+    const sumsByOp = new Map();
+    for (const t of allTasks){
+      if (normalizeProjectName(t.project) !== selectedProject) continue;
+      if (selectedPosto !== '__ALL__' && (t.posto || '').trim() !== selectedPosto) continue;
+      if (!sumsByOp.has(t.op)) sumsByOp.set(t.op, new Map());
+      const dayMap = sumsByOp.get(t.op);
+      const dKey = dayKeyUTC(t.start);
+      const prev = dayMap.get(dKey) || { qty: 0, hours: 0 };
+      prev.qty += (t.qty || 0);
+
+      let effectiveEnd = t.end;
+      const clockOut = getClockOutInstant(t.op, dKey);
+      if (clockOut && effectiveEnd > clockOut) effectiveEnd = clockOut;
+      prev.hours += Math.max(0, (effectiveEnd - t.start) / 3600000);
+
+      dayMap.set(dKey, prev);
+    }
+
+    const metricBtn = document.querySelector('.metric-btn.active');
+    const metric = metricBtn ? metricBtn.dataset.metric : 'parts';
+
+    const grid = document.getElementById('projectsGrid');
+    grid.innerHTML = '';
+    grid.style.gridTemplateColumns = '190px repeat(' + allDays.length + ', 28px)';
+
+    const corner = document.createElement('div');
+    corner.className = 'ov-corner';
+    corner.textContent = 'Operator';
+    grid.appendChild(corner);
+
+    for (const dKey of allDays){
+      const h = document.createElement('div');
+      h.className = 'ov-day-header';
+      const d = dayStartUTC(dKey);
+      h.innerHTML = String(d.getUTCDate()).padStart(2,'0') + '<br>' + d.toLocaleDateString('en-GB', {month:'short', timeZone:'UTC'});
+      h.title = fmtDayLabel(dKey);
+      grid.appendChild(h);
+    }
+
+    let lastGroup = null;
+    for (const opInfo of operators){
+      if (opInfo.group !== lastGroup){
+        lastGroup = opInfo.group;
+        const gh = document.createElement('div');
+        gh.className = 'ov-group-header';
+        gh.textContent = opInfo.groupLabel + ' team';
+        grid.appendChild(gh);
+      }
+
+      const label = document.createElement('div');
+      label.className = 'ov-row-label';
+      label.textContent = opInfo.name;
+      grid.appendChild(label);
+
+      const dayMap = sumsByOp.get(opInfo.name);
+      for (const dKey of allDays){
+        const entry = dayMap ? dayMap.get(dKey) : null;
+        const cell = document.createElement('div');
+        let text = '—', tip = '';
+
+        if (entry && entry.qty > 0){
+          if (metric === 'parts'){
+            text = entry.qty % 1 === 0 ? entry.qty : entry.qty.toFixed(1);
+            tip = entry.qty + ' parts';
+          } else if (metric === 'hours'){
+            text = entry.hours.toFixed(1);
+            tip = fmtHours(entry.hours) + ' logged for ' + entry.qty + ' parts';
+          } else if (metric === 'avgHours'){
+            const hrsPerPart = entry.hours / entry.qty;
+            text = hrsPerPart.toFixed(1);
+            tip = hrsPerPart.toFixed(1) + ' h/part — ' + fmtHours(entry.hours) + ' ÷ ' + entry.qty + ' parts';
+          }
+        } else if (entry && entry.hours > 0){
+          // hours logged but zero parts recorded — only relevant outside "parts" view
+          if (metric === 'hours'){ text = entry.hours.toFixed(1); tip = fmtHours(entry.hours) + ' logged, 0 parts'; }
+        }
+
+        cell.className = 'ov-cell ov-cell-num' + (tip ? ' has-value' : '');
+        cell.textContent = text;
+        if (tip) cell.title = opInfo.name + ' — ' + fmtDayLabel(dKey) + ': ' + tip;
+        grid.appendChild(cell);
+      }
+    }
   }
 
   function groupOperators(list){
@@ -790,6 +1194,25 @@
     return (h * 60 + min) / 1440;
   }
 
+  // First clock-in / last clock-out for a timetrack entry, using the
+  // midnight-aware "adjusted" values so a night shift (e.g. 22:50 -> 08:00
+  // the next morning, all logged on one row) computes a correct positive
+  // span instead of the raw time-of-day fractions wrapping around.
+  function ttSpanHours(entry){
+    if (!entry.insAdj.length || !entry.outsAdj.length) return null;
+    return (Math.max(...entry.outsAdj) - Math.min(...entry.insAdj)) * 24;
+  }
+  // Picks the raw (wrapped) fraction of whichever punch is chronologically
+  // first/last, for drawing a single "first in" / "last out" marker.
+  function ttPickExtreme(rawArr, adjArr, mode){
+    if (!rawArr.length) return null;
+    let bestIdx = 0;
+    for (let i = 1; i < adjArr.length; i++){
+      if (mode === 'min' ? adjArr[i] < adjArr[bestIdx] : adjArr[i] > adjArr[bestIdx]) bestIdx = i;
+    }
+    return rawArr[bestIdx];
+  }
+
   function parseTimetrackDate(v){
     if (v instanceof Date) return normalizeSheetDate(v);
     if (typeof v === 'number'){
@@ -841,13 +1264,32 @@
       const dKey = dayKeyUTC(parsedDate);
       if (!map.has(key)) map.set(key, new Map());
       const dayMap = map.get(key);
-      if (!dayMap.has(dKey)) dayMap.set(dKey, { ins: [], outs: [] });
+      if (!dayMap.has(dKey)) dayMap.set(dKey, { ins: [], outs: [], insAdj: [], outsAdj: [] });
       const entry = dayMap.get(dKey);
+      // Walk the punches in chronological order (E1,S1,E2,S2,...) and track
+      // when a punch's time-of-day is earlier than the previous one — that
+      // means the shift has crossed midnight (e.g. a night shift running
+      // 22:50 -> 08:00 next morning, all logged under the start date). We
+      // keep the raw (wrapped) fraction for drawing the marker at the right
+      // spot on the 24h bar, alongside a running "adjusted" value that keeps
+      // counting upward past midnight instead of wrapping back to a small
+      // number — that adjusted value is what span/duration math must use.
+      let prevRaw = null, dayOffset = 0;
       for (const [inCol, outCol] of inOutCols){
         const inF = inCol ? parseClockFraction(r[inCol]) : null;
         const outF = outCol ? parseClockFraction(r[outCol]) : null;
-        if (inF !== null) entry.ins.push(inF);
-        if (outF !== null) entry.outs.push(outF);
+        if (inF !== null){
+          if (prevRaw !== null && inF < prevRaw) dayOffset += 1;
+          entry.ins.push(inF);
+          entry.insAdj.push(inF + dayOffset);
+          prevRaw = inF;
+        }
+        if (outF !== null){
+          if (prevRaw !== null && outF < prevRaw) dayOffset += 1;
+          entry.outs.push(outF);
+          entry.outsAdj.push(outF + dayOffset);
+          prevRaw = outF;
+        }
       }
     }
     timetrackData = map;
@@ -961,6 +1403,55 @@
   }
 
   daySelect.addEventListener('change', () => renderDay(daySelect.value));
+
+  // ---------- tab switching ----------
+  const viewOccupancy = document.getElementById('viewOccupancy');
+  const viewAdmin = document.getElementById('viewAdmin');
+  const toolbarEl = document.getElementById('toolbar');
+  const topExtraEl = document.getElementById('topExtra');
+  const subviews = {
+    overview: document.getElementById('adminSubviewOverview'),
+    projects: document.getElementById('adminSubviewProjects')
+  };
+  document.querySelectorAll('.metric-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.metric-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      renderProjectsMatrix();
+    });
+  });
+
+  const subviewRenderers = {
+    overview: renderOverviewMatrix,
+    projects: renderProjectsMatrix
+  };
+  let activeSubTab = 'overview';
+
+  document.querySelectorAll('.main-tab').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.main-tab').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      const tab = btn.dataset.tab;
+      const isAdmin = tab === 'admin';
+      viewOccupancy.style.display = isAdmin ? 'none' : '';
+      viewAdmin.style.display = isAdmin ? 'block' : 'none';
+      toolbarEl.style.display = isAdmin ? 'none' : '';
+      topExtraEl.style.display = isAdmin ? 'none' : '';
+      if (isAdmin) subviewRenderers[activeSubTab]();
+    });
+  });
+
+  document.querySelectorAll('.sub-tab').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.sub-tab').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      activeSubTab = btn.dataset.subtab;
+      Object.keys(subviews).forEach(key => {
+        subviews[key].style.display = (key === activeSubTab) ? 'block' : 'none';
+      });
+      subviewRenderers[activeSubTab]();
+    });
+  });
 
   // ---------- display mode (seamless auto-rotate through operators) ----------
   const gridBox = document.getElementById('gridBox');
@@ -1083,6 +1574,18 @@
     pctHeader.textContent = '%';
     gridHeader.appendChild(pctHeader);
 
+    const optSpanHeader = document.createElement('div');
+    optSpanHeader.className = 'time-header';
+    optSpanHeader.textContent = 'Opt. Span';
+    optSpanHeader.title = 'Time between first clock-in and last clock-out at OPTIMAL';
+    gridHeader.appendChild(optSpanHeader);
+
+    const optPctHeader = document.createElement('div');
+    optPctHeader.className = 'time-header';
+    optPctHeader.textContent = 'Opt. %';
+    optPctHeader.title = 'SEGIN allocated hours ÷ time at OPTIMAL';
+    gridHeader.appendChild(optPctHeader);
+
     const ruler = document.createElement('div');
     ruler.className = 'ruler';
     ruler.appendChild(shiftBandsEl());
@@ -1136,6 +1639,24 @@
 
       const status = computeStatus(opTasks);
 
+      const ttDay = timetrackData ? timetrackData.get(normalize(opInfo.name)) : null;
+      const ttEntry = ttDay ? ttDay.get(dayKey) : null;
+      if (window.__ttDebug) window.__ttDebugLog.push({op: opInfo.name, norm: normalize(opInfo.name), hasTtDay: !!ttDay, dayKey, entry: ttEntry ? JSON.parse(JSON.stringify(ttEntry)) : null});
+      let optSpanHrs = null, optPct = null;
+      if (ttEntry && ttEntry.ins.length && ttEntry.outs.length){
+        optSpanHrs = ttSpanHours(ttEntry);
+        if (optSpanHrs > 0 && status.allocHrs !== null) optPct = (status.allocHrs / optSpanHrs) * 100;
+      }
+
+      // if a task was logged but there's no corresponding clock-in/out record
+      // at all (and a timetrack file has actually been loaded, so we can
+      // tell), that's a red flag regardless of what the task numbers say
+      const hasClockData = ttEntry && (ttEntry.ins.length || ttEntry.outs.length);
+      if (timetrackData && opTasks.length && !hasClockData){
+        status.color = 'red';
+        status.reason += ' · no clock-in/out recorded at OPTIMAL';
+      }
+
       const label = document.createElement('div');
       label.className = 'op-label' + (opTasks.length ? '' : ' no-activity');
       label.innerHTML = `<div class="name"><span class="signal ${status.color}" title="${escapeHtml(status.reason)}"></span>${escapeHtml(opInfo.name)}</div><div class="id">${escapeHtml(opInfo.id||'')}</div>`;
@@ -1149,23 +1670,39 @@
 
       const endCell = document.createElement('div');
       endCell.className = 'time-cell c2' + (status.last ? '' : ' empty');
-      endCell.textContent = status.last ? fmtHM(status.last) : '—';
+      endCell.textContent = status.continuesNextDay ? 'INC.' : (status.last ? fmtHM(status.last) : '—');
+      if (status.continuesNextDay) endCell.title = 'Still logging hours past the end of the day';
       gridInner.appendChild(endCell);
 
       const spanCell = document.createElement('div');
       spanCell.className = 'time-cell c3' + (status.gapHrs !== null ? '' : ' empty');
-      spanCell.textContent = status.gapHrs !== null ? fmtHours(status.gapHrs) : '—';
+      spanCell.textContent = status.continuesNextDay ? 'INC.' : (status.gapHrs !== null ? fmtHours(status.gapHrs) : '—');
+      if (status.continuesNextDay) spanCell.title = 'Still logging hours past the end of the day';
       gridInner.appendChild(spanCell);
 
       const allocCell = document.createElement('div');
       allocCell.className = 'time-cell c4' + (status.allocHrs !== null ? '' : ' empty');
-      allocCell.textContent = status.allocHrs !== null ? fmtHours(status.allocHrs) : '—';
+      allocCell.textContent = status.continuesNextDay ? 'INC.' : (status.allocHrs !== null ? fmtHours(status.allocHrs) : '—');
+      if (status.continuesNextDay) allocCell.title = 'Still logging hours past the end of the day';
       gridInner.appendChild(allocCell);
 
       const pctCell = document.createElement('div');
       pctCell.className = 'time-cell c5 emphasis' + (status.pct !== null ? '' : ' empty');
-      pctCell.textContent = status.pct !== null ? status.pct.toFixed(0) + '%' : '—';
+      pctCell.textContent = status.continuesNextDay ? 'INC.' : (status.pct !== null ? status.pct.toFixed(0) + '%' : '—');
+      if (status.continuesNextDay) pctCell.title = 'Still logging hours past the end of the day';
       gridInner.appendChild(pctCell);
+
+      const optSpanCell = document.createElement('div');
+      optSpanCell.className = 'time-cell c6' + (optSpanHrs !== null ? '' : ' empty');
+      optSpanCell.textContent = status.continuesNextDay ? 'INC.' : (optSpanHrs !== null ? fmtHours(optSpanHrs) : '—');
+      optSpanCell.title = status.continuesNextDay ? 'Still logging hours past the end of the day' : 'Time between first clock-in and last clock-out (OPTIMAL timetrack)';
+      gridInner.appendChild(optSpanCell);
+
+      const optPctCell = document.createElement('div');
+      optPctCell.className = 'time-cell c7 emphasis' + (optPct !== null ? '' : ' empty');
+      optPctCell.textContent = status.continuesNextDay ? 'INC.' : (optPct !== null ? (optPct > 100 ? 'INC.' : optPct.toFixed(0) + '%') : '—');
+      optPctCell.title = status.continuesNextDay ? 'Still logging hours past the end of the day' : ('SEGIN allocated hours ÷ time at OPTIMAL' + (optPct !== null && optPct > 100 ? ' — exceeds 100% (' + optPct.toFixed(0) + '%): logged task time extends outside the clocked window' : ''));
+      gridInner.appendChild(optPctCell);
 
       const track = document.createElement('div');
       track.className = 'track';
@@ -1203,32 +1740,27 @@
         track.style.height = '46px';
       }
 
-      if (timetrackData){
-        const ttDay = timetrackData.get(normalize(opInfo.name));
-        const entry = ttDay ? ttDay.get(dayKey) : null;
-        if (window.__ttDebug) window.__ttDebugLog.push({op: opInfo.name, norm: normalize(opInfo.name), hasTtDay: !!ttDay, dayKey, entry: entry ? JSON.parse(JSON.stringify(entry)) : null});
-        if (entry){
-          const insToShow = showAllClockMarks
-            ? entry.ins
-            : (entry.ins.length ? [Math.min(...entry.ins)] : []);
-          const outsToShow = showAllClockMarks
-            ? entry.outs
-            : (entry.outs.length ? [Math.max(...entry.outs)] : []);
-          insToShow.forEach(f => {
-            const mark = document.createElement('div');
-            mark.className = 'clock-mark in';
-            mark.style.left = 'calc(' + (f*100) + '% - 5px)';
-            mark.title = 'Clock in ' + fmtHM(new Date(dStart.getTime() + f*86400000));
-            track.appendChild(mark);
-          });
-          outsToShow.forEach(f => {
-            const mark = document.createElement('div');
-            mark.className = 'clock-mark out';
-            mark.style.left = 'calc(' + (f*100) + '% - 5px)';
-            mark.title = 'Clock out ' + fmtHM(new Date(dStart.getTime() + f*86400000));
-            track.appendChild(mark);
-          });
-        }
+      if (ttEntry){
+        const insToShow = showAllClockMarks
+          ? ttEntry.ins
+          : (ttEntry.ins.length ? [ttPickExtreme(ttEntry.ins, ttEntry.insAdj, 'min')] : []);
+        const outsToShow = showAllClockMarks
+          ? ttEntry.outs
+          : (ttEntry.outs.length ? [ttPickExtreme(ttEntry.outs, ttEntry.outsAdj, 'max')] : []);
+        insToShow.forEach(f => {
+          const mark = document.createElement('div');
+          mark.className = 'clock-mark in';
+          mark.style.left = 'calc(' + (f*100) + '% - 5px)';
+          mark.title = 'Clock in ' + fmtHM(new Date(dStart.getTime() + f*86400000));
+          track.appendChild(mark);
+        });
+        outsToShow.forEach(f => {
+          const mark = document.createElement('div');
+          mark.className = 'clock-mark out';
+          mark.style.left = 'calc(' + (f*100) + '% - 5px)';
+          mark.title = 'Clock out ' + fmtHM(new Date(dStart.getTime() + f*86400000));
+          track.appendChild(mark);
+        });
       }
 
       gridInner.appendChild(track);
