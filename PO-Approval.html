@@ -591,9 +591,11 @@ function saveState() {
     if (state.apiKey) localStorage.setItem('po_tool_apikey', state.apiKey);
   } catch(e) {}
 
-  // Also push to GitHub if configured (async, non-blocking)
+  // Push to GitHub if configured
   if (ghConfigured()) {
-    ghPush().catch(e => console.error('[GH] Push error:', e));
+    ghPush().then(ok => {
+      if (!ok) console.warn('[GH] saveState push failed:', state._ghError);
+    }).catch(e => console.error('[GH] Push error:', e));
   }
 }
 
@@ -2051,14 +2053,32 @@ function renderUsers() {
       </div>
     </div>
     <button class="btn btn-primary btn-sm" id="nu-submit">Add User</button>`;
-  addCard.querySelector('#nu-submit').onclick=()=>{
+  addCard.querySelector('#nu-submit').onclick = async () => {
     const g=id=>addCard.querySelector(id)?.value?.trim()||'';
     const name=g('#nu-name'),login=g('#nu-login'),pass=g('#nu-pass'),email=g('#nu-email'),role=g('#nu-role');
     const levels=[1,2,3].filter(l=>addCard.querySelector(`#nu-l${l}`)?.checked);
     if (!name||!login||!pass||!email){toast('All fields are required.','error');return;}
     if (state.users.find(u=>u.login===login)){toast('Login already exists.','error');return;}
+
     state.users.push({id:'u'+uid(),login,pass,name,email,role,levels});
-    saveState(); toast(`User ${name} added.`); render();
+
+    // Save locally first
+    try {
+      const posClean = state.pos.map(po => { const {approvedPdfB64, originalPdfB64, ...rest} = po; return rest; });
+      localStorage.setItem('po_tool_optimal', JSON.stringify({
+        users: state.users, pos: posClean, archive: state.archive, _ghSha: state._ghSha
+      }));
+    } catch(e) {}
+
+    // Await GitHub push
+    if (ghConfigured()) {
+      const ok = await ghPush();
+      if (ok) toast(`User ${name} added and saved to GitHub ✓`);
+      else toast(`User ${name} added locally — GitHub sync failed (${state._ghError||'unknown'})`, 'error', 6000);
+    } else {
+      toast(`User ${name} added.`);
+    }
+    render();
   };
   div.appendChild(addCard);
 
