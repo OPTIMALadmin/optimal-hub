@@ -4,7 +4,6 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>PO Approval Tool — OPTIMAL</title>
-<script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/pdf-lib@1.17.1/dist/pdf-lib.min.js"></script>
 <style>
 @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;600;700&display=swap');
@@ -778,41 +777,37 @@ function addEvent(type, poId, userId, message) {
   saveState();
 }
 // ---- EmailJS config ----
-const EMAILJS_SERVICE_ID  = 'service_jypdkrp';
-const EMAILJS_TEMPLATE_ID = 'template_uge12ij';
-const EMAILJS_PUBLIC_KEY  = 'wtS4KdSX8P9ihISpT';
-emailjs.init(EMAILJS_PUBLIC_KEY);
-
-// Test EmailJS connectivity silently on startup
-async function testEmailJS() {
-  try {
-    // Send a minimal request — will get 400 (bad params) if reachable, network error if blocked
-    const r = await fetch('https://api.emailjs.com/api/v1.0/email/send', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ service_id:'x', template_id:'x', user_id:'x', template_params:{} }),
-    });
-    state.emailJSReachable = true; // any HTTP response = server is reachable
-    console.log('[EmailJS] Server reachable, status:', r.status);
-  } catch(e) {
-    state.emailJSReachable = false;
-    console.warn('[EmailJS] Server NOT reachable:', e.message);
-  }
-}
+const BREVO_API_KEY = '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';
+const BREVO_SENDER_EMAIL = 'POApproval@optimal.pt';
+const BREVO_SENDER_NAME  = 'PO Approval Tool — OPTIMAL';
 
 async function sendEmail(to, subject, message, poId) {
   state.archive.unshift({ id:uid(), type:'email', to, subject, poId, ts:new Date().toISOString() });
   saveState();
   try {
-    const response = await emailjs.send(
-      EMAILJS_SERVICE_ID,
-      EMAILJS_TEMPLATE_ID,
-      { to_email: to, subject: subject, message: message }
-    );
-    console.log('[EmailJS] Sent to', to, response.status, response.text);
+    const response = await fetch('https://api.brevo.com/v3/smtp/email', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'api-key': BREVO_API_KEY,
+      },
+      body: JSON.stringify({
+        sender:  { name: BREVO_SENDER_NAME, email: BREVO_SENDER_EMAIL },
+        to:      [{ email: to }],
+        subject: subject,
+        textContent: message,
+      }),
+    });
+    if (response.ok) {
+      console.log('[Brevo] Email sent to', to);
+    } else {
+      const err = await response.json().catch(() => ({}));
+      console.error('[Brevo] Send failed:', response.status, err);
+      toast(`Email failed to ${to}: ${err.message || response.status}`, 'error', 6000);
+    }
   } catch(err) {
-    console.error('[EmailJS] Failed:', err);
-    toast(`Email failed: ${err?.text || err?.message || JSON.stringify(err)}`, 'error', 6000);
+    console.error('[Brevo] Network error:', err);
+    toast(`Email network error: ${err.message}`, 'error', 6000);
   }
 }
 
@@ -876,6 +871,19 @@ function renderLogin() {
   setTimeout(()=>{ const i=document.getElementById('lu'); if(i)i.focus(); },50);
   return page;
 }
+async function testEmailJS() {
+  try {
+    const r = await fetch('https://api.brevo.com/v3/account', {
+      headers: { 'api-key': BREVO_API_KEY }
+    });
+    state.emailJSReachable = r.ok;
+    console.log('[Brevo] API reachable:', r.ok, 'status:', r.status);
+  } catch(e) {
+    state.emailJSReachable = false;
+    console.warn('[Brevo] API not reachable:', e.message);
+  }
+}
+
 function doLogin() {
   const login = document.getElementById('lu')?.value.trim();
   const pass  = document.getElementById('lp')?.value;
@@ -2354,14 +2362,14 @@ function renderApiSettings() {
   // ── EmailJS test card ──────────────────────────────────────
   const ejCard = document.createElement('div'); ejCard.className = 'card'; ejCard.style.marginBottom = '20px';
   ejCard.innerHTML = `
-    <div style="font-size:12px;font-weight:700;margin-bottom:12px;color:var(--cyan);text-transform:uppercase;letter-spacing:0.06em">EmailJS Status</div>
-    <p style="font-size:11px;color:var(--text2);margin-bottom:14px;line-height:1.7">EmailJS is used to send approval emails. It must be reachable from this browser/computer.</p>
+    <div style="font-size:12px;font-weight:700;margin-bottom:12px;color:var(--cyan);text-transform:uppercase;letter-spacing:0.06em">Email Status (Brevo)</div>
+    <p style="font-size:11px;color:var(--text2);margin-bottom:14px;line-height:1.7">Emails are sent via <strong>Brevo</strong> (300 emails/day free). Sender: <strong>${BREVO_SENDER_EMAIL}</strong></p>
     <div style="margin-bottom:14px">
       ${state.emailJSReachable === true
-        ? '<div class="alert alert-success">✓ EmailJS server is reachable from this computer — emails should work.</div>'
+        ? '<div class="alert alert-success">✓ Brevo API is reachable — emails should work.</div>'
         : state.emailJSReachable === false
-          ? '<div class="alert alert-error">✗ EmailJS server is NOT reachable from this computer — emails will fail.<br><br><strong>Fix:</strong> Go to <a href="https://emailjs.com" target="_blank" style="color:var(--red-light)">emailjs.com</a> → Account → Security → add <strong>https://optimaladmin.github.io</strong> to allowed origins, or disable domain restriction.</div>'
-          : '<div class="alert alert-info">EmailJS connectivity not yet tested — log out and back in to test.</div>'}
+          ? '<div class="alert alert-error">✗ Brevo API is NOT reachable from this computer — emails will fail.</div>'
+          : '<div class="alert alert-info">Email connectivity not yet tested — log out and back in to test.</div>'}
     </div>
     <div style="display:flex;gap:10px;flex-wrap:wrap">
       <button class="btn btn-outline btn-sm" id="test-reach-btn">🔌 Re-test Connection</button>
@@ -2371,38 +2379,34 @@ function renderApiSettings() {
 
   ejCard.querySelector('#test-reach-btn').onclick = async () => {
     const res = document.getElementById('ej-result');
-    res.innerHTML = '<div class="alert alert-info">Testing connection to api.emailjs.com…</div>';
+    res.innerHTML = '<div class="alert alert-info">Testing connection to api.brevo.com…</div>';
     try {
-      const r = await fetch('https://api.emailjs.com/api/v1.0/email/send', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ service_id:'x', template_id:'x', user_id:'x', template_params:{} }),
+      const r = await fetch('https://api.brevo.com/v3/account', {
+        headers: { 'api-key': BREVO_API_KEY }
       });
-      state.emailJSReachable = true;
-      res.innerHTML = `<div class="alert alert-success">✓ EmailJS server is reachable (HTTP ${r.status}) — emails should work from this computer.</div>`;
+      state.emailJSReachable = r.ok;
+      if (r.ok) {
+        const data = await r.json();
+        res.innerHTML = `<div class="alert alert-success">✓ Brevo connected — account: <strong>${data.email||''}</strong>, plan: ${data.plan?.[0]?.type||'free'}</div>`;
+      } else {
+        res.innerHTML = `<div class="alert alert-error">✗ Brevo API error (${r.status}) — check your API key.</div>`;
+      }
     } catch(err) {
       state.emailJSReachable = false;
-      res.innerHTML = `<div class="alert alert-error">✗ Cannot reach api.emailjs.com: <strong>${err.message}</strong><br><br>
-        Go to <a href="https://emailjs.com" target="_blank" style="color:var(--red-light)">emailjs.com</a> → Account → Security → add
-        <strong>https://optimaladmin.github.io</strong> to allowed origins, or disable domain restriction.
-      </div>`;
+      res.innerHTML = `<div class="alert alert-error">✗ Cannot reach api.brevo.com: <strong>${err.message}</strong></div>`;
     }
   };
 
   ejCard.querySelector('#test-send-btn').onclick = async () => {
     const res = document.getElementById('ej-result');
     res.innerHTML = '<div class="alert alert-info">Sending test email to POApproval@optimal.pt…</div>';
-    try {
-      const r = await emailjs.send(EMAILJS_SERVICE_ID, EMAILJS_TEMPLATE_ID, {
-        to_email: 'POApproval@optimal.pt',
-        subject:  'PO Approval Tool — Connection Test',
-        message:  `This is a test email.\n\nSent by: ${state.currentUser?.name||'unknown'}\nTime: ${new Date().toLocaleString('en-GB')}`,
-      });
-      res.innerHTML = `<div class="alert alert-success">✓ Test email sent successfully! Check POApproval@optimal.pt inbox. (Status: ${r.status} ${r.text})</div>`;
-    } catch(err) {
-      const detail = err?.text || err?.message || JSON.stringify(err);
-      res.innerHTML = `<div class="alert alert-error">✗ Send failed: <strong>${detail}</strong></div>`;
-    }
+    await sendEmail(
+      BREVO_SENDER_EMAIL,
+      'PO Approval Tool — Brevo Connection Test',
+      `This is a test email from the PO Approval Tool.\n\nSent by: ${state.currentUser?.name||'admin'}\nTime: ${new Date().toLocaleString('en-GB')}\n\nIf you received this, Brevo email delivery is working correctly.`,
+      null
+    );
+    res.innerHTML = '<div class="alert alert-success">✓ Test email sent — check POApproval@optimal.pt inbox.</div>';
   };
 
   div.appendChild(ejCard);
