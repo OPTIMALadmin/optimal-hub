@@ -2383,16 +2383,23 @@ function renderApiSettings() {
 
   ejCard.querySelector('#test-send-btn').onclick = async () => {
     const res = document.getElementById('ej-result');
-    res.innerHTML = '<div class="alert alert-info">Sending test email to POApproval@optimal.pt…</div>';
+    res.innerHTML = '<div class="alert alert-info">Sending test email…</div>';
     try {
       const r = await emailjs.send(EMAILJS_SERVICE_ID, EMAILJS_TEMPLATE_ID, {
         to_email: 'POApproval@optimal.pt',
-        subject:  'PO Approval Tool — Email Test (Brevo)',
-        message:  `This is a test email.\n\nSent by: ${state.currentUser?.name||'admin'}\nTime: ${new Date().toLocaleString('en-GB')}\n\nIf you received this, EmailJS + Brevo is working correctly.`,
+        subject:  'PO Approval Tool — Email Test',
+        message:  `Test email sent at ${new Date().toLocaleString('en-GB')} by ${state.currentUser?.name||'admin'}`,
       });
-      res.innerHTML = `<div class="alert alert-success">✓ Test email sent! Check POApproval@optimal.pt inbox. (${r.status} ${r.text})</div>`;
+      res.innerHTML = `<div class="alert alert-success">✓ Sent! Status: ${r.status} — ${r.text}</div>`;
     } catch(err) {
-      res.innerHTML = `<div class="alert alert-error">✗ Send failed: <strong>${err?.text || err?.message || JSON.stringify(err)}</strong></div>`;
+      console.error('[EmailJS] Full error object:', err);
+      const detail = typeof err === 'object' ? JSON.stringify(err) : String(err);
+      res.innerHTML = `<div class="alert alert-error">
+        ✗ Failed<br><br>
+        <strong>Status:</strong> ${err?.status || 'unknown'}<br>
+        <strong>Text:</strong> ${err?.text || 'none'}<br>
+        <strong>Full error:</strong> <code style="font-size:10px;word-break:break-all">${detail}</code>
+      </div>`;
     }
   };
 
