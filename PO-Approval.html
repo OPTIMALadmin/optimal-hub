@@ -4,7 +4,6 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>PO Approval Tool — OPTIMAL</title>
-<script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/pdf-lib@1.17.1/dist/pdf-lib.min.js"></script>
 <style>
 @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;600;700&display=swap');
@@ -778,24 +777,27 @@ function addEvent(type, poId, userId, message) {
   saveState();
 }
 // ---- EmailJS config ----
-const EMAILJS_SERVICE_ID  = 'service_r6kkz5g';
-const EMAILJS_TEMPLATE_ID = 'template_uge12ij';
-const EMAILJS_PUBLIC_KEY  = 'wtS4KdSX8P9ihISpT';
-emailjs.init(EMAILJS_PUBLIC_KEY);
+const EMAIL_WORKER_URL = 'https://po-email.antonio-g-reis.workers.dev';
 
 async function sendEmail(to, subject, message, poId) {
   state.archive.unshift({ id:uid(), type:'email', to, subject, poId, ts:new Date().toISOString() });
   saveState();
   try {
-    const response = await emailjs.send(
-      EMAILJS_SERVICE_ID,
-      EMAILJS_TEMPLATE_ID,
-      { to_email: to, subject: subject, message: message }
-    );
-    console.log('[Email] Sent to', to, response.status, response.text);
+    const response = await fetch(EMAIL_WORKER_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ to, subject, message }),
+    });
+    if (response.ok) {
+      console.log('[Email] Sent to', to);
+    } else {
+      const err = await response.text();
+      console.error('[Email] Failed:', response.status, err);
+      toast(`Email failed to ${to}: ${err}`, 'error', 6000);
+    }
   } catch(err) {
-    console.error('[Email] Failed:', err);
-    toast(`Email failed to ${to}: ${err?.text || err?.message || JSON.stringify(err)}`, 'error', 6000);
+    console.error('[Email] Network error:', err);
+    toast(`Email network error: ${err.message}`, 'error', 6000);
   }
 }
 
@@ -861,16 +863,12 @@ function renderLogin() {
 }
 async function testEmailJS() {
   try {
-    const r = await fetch('https://api.emailjs.com/api/v1.0/email/send', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ service_id:'x', template_id:'x', user_id:'x', template_params:{} }),
-    });
+    const r = await fetch(EMAIL_WORKER_URL, { method: 'OPTIONS' });
     state.emailJSReachable = true;
-    console.log('[EmailJS] Server reachable, status:', r.status);
+    console.log('[Worker] Reachable, status:', r.status);
   } catch(e) {
     state.emailJSReachable = false;
-    console.warn('[EmailJS] Server not reachable:', e.message);
+    console.warn('[Worker] Not reachable:', e.message);
   }
 }
 
@@ -2349,13 +2347,16 @@ function renderApiSettings() {
   // ── EmailJS test card ──────────────────────────────────────
   const ejCard = document.createElement('div'); ejCard.className = 'card'; ejCard.style.marginBottom = '20px';
   ejCard.innerHTML = `
-    <div style="font-size:12px;font-weight:700;margin-bottom:12px;color:var(--cyan);text-transform:uppercase;letter-spacing:0.06em">Email Status (EmailJS + Brevo)</div>
-    <p style="font-size:11px;color:var(--text2);margin-bottom:14px;line-height:1.7">Emails are sent via <strong>EmailJS</strong> using <strong>Brevo SMTP</strong> as the backend (300 emails/day free).</p>
+    <div style="font-size:12px;font-weight:700;margin-bottom:12px;color:var(--cyan);text-transform:uppercase;letter-spacing:0.06em">Email Status (Cloudflare Worker + Brevo)</div>
+    <p style="font-size:11px;color:var(--text2);margin-bottom:14px;line-height:1.7">
+      Emails are sent via a <strong>Cloudflare Worker</strong> proxy to <strong>Brevo SMTP</strong>.<br>
+      Worker URL: <code style="font-size:10px;color:var(--cyan)">${EMAIL_WORKER_URL}</code>
+    </p>
     <div style="margin-bottom:14px">
       ${state.emailJSReachable === true
-        ? '<div class="alert alert-success">✓ EmailJS server is reachable — emails should work.</div>'
+        ? '<div class="alert alert-success">✓ Cloudflare Worker is reachable — emails should work.</div>'
         : state.emailJSReachable === false
-          ? '<div class="alert alert-error">✗ EmailJS server is NOT reachable — emails will fail.</div>'
+          ? '<div class="alert alert-error">✗ Cloudflare Worker is NOT reachable — check your Worker is deployed.</div>'
           : '<div class="alert alert-info">Email connectivity not yet tested — log out and back in to test.</div>'}
     </div>
     <div style="display:flex;gap:10px;flex-wrap:wrap">
@@ -2366,40 +2367,38 @@ function renderApiSettings() {
 
   ejCard.querySelector('#test-reach-btn').onclick = async () => {
     const res = document.getElementById('ej-result');
-    res.innerHTML = '<div class="alert alert-info">Testing connection to EmailJS…</div>';
+    res.innerHTML = '<div class="alert alert-info">Testing Cloudflare Worker…</div>';
     try {
-      const r = await fetch('https://api.emailjs.com/api/v1.0/email/send', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ service_id:'x', template_id:'x', user_id:'x', template_params:{} }),
-      });
+      const r = await fetch(EMAIL_WORKER_URL, { method: 'OPTIONS' });
       state.emailJSReachable = true;
-      res.innerHTML = `<div class="alert alert-success">✓ EmailJS server is reachable (HTTP ${r.status}) — emails should work.</div>`;
+      res.innerHTML = `<div class="alert alert-success">✓ Cloudflare Worker is reachable (HTTP ${r.status}) — emails should work.</div>`;
     } catch(err) {
       state.emailJSReachable = false;
-      res.innerHTML = `<div class="alert alert-error">✗ Cannot reach EmailJS: <strong>${err.message}</strong></div>`;
+      res.innerHTML = `<div class="alert alert-error">✗ Cannot reach Worker: <strong>${err.message}</strong></div>`;
     }
   };
 
   ejCard.querySelector('#test-send-btn').onclick = async () => {
     const res = document.getElementById('ej-result');
-    res.innerHTML = '<div class="alert alert-info">Sending test email…</div>';
+    res.innerHTML = '<div class="alert alert-info">Sending test email via Cloudflare Worker…</div>';
     try {
-      const r = await emailjs.send(EMAILJS_SERVICE_ID, EMAILJS_TEMPLATE_ID, {
-        to_email: 'POApproval@optimal.pt',
-        subject:  'PO Approval Tool — Email Test',
-        message:  `Test email sent at ${new Date().toLocaleString('en-GB')} by ${state.currentUser?.name||'admin'}`,
+      const r = await fetch(EMAIL_WORKER_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          to: 'POApproval@optimal.pt',
+          subject: 'PO Approval Tool — Email Test',
+          message: `Test email sent at ${new Date().toLocaleString('en-GB')} by ${state.currentUser?.name||'admin'}.\n\nIf you received this, email delivery is working correctly.`,
+        }),
       });
-      res.innerHTML = `<div class="alert alert-success">✓ Sent! Status: ${r.status} — ${r.text}</div>`;
+      const text = await r.text();
+      if (r.ok) {
+        res.innerHTML = `<div class="alert alert-success">✓ Test email sent! Check POApproval@optimal.pt inbox.</div>`;
+      } else {
+        res.innerHTML = `<div class="alert alert-error">✗ Worker returned error (${r.status}): ${text}</div>`;
+      }
     } catch(err) {
-      console.error('[EmailJS] Full error object:', err);
-      const detail = typeof err === 'object' ? JSON.stringify(err) : String(err);
-      res.innerHTML = `<div class="alert alert-error">
-        ✗ Failed<br><br>
-        <strong>Status:</strong> ${err?.status || 'unknown'}<br>
-        <strong>Text:</strong> ${err?.text || 'none'}<br>
-        <strong>Full error:</strong> <code style="font-size:10px;word-break:break-all">${detail}</code>
-      </div>`;
+      res.innerHTML = `<div class="alert alert-error">✗ Failed: <strong>${err.message}</strong></div>`;
     }
   };
 
