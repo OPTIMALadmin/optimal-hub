@@ -777,7 +777,7 @@ function addEvent(type, poId, userId, message) {
   saveState();
 }
 // ---- EmailJS config ----
-const EMAIL_WORKER_URL = 'https://po-email.antonio-g-reis.workers.dev';
+const EMAIL_WORKER_URL = 'https://po-email2.antonio-g-reis.workers.dev';
 
 async function sendEmail(to, subject, message, poId) {
   state.archive.unshift({ id:uid(), type:'email', to, subject, poId, ts:new Date().toISOString() });
@@ -2395,10 +2395,16 @@ function renderApiSettings() {
       if (r.ok) {
         res.innerHTML = `<div class="alert alert-success">✓ Test email sent! Check POApproval@optimal.pt inbox.</div>`;
       } else {
-        res.innerHTML = `<div class="alert alert-error">✗ Worker returned error (${r.status}): ${text}</div>`;
+        res.innerHTML = `<div class="alert alert-error">✗ Worker returned error (HTTP ${r.status}):<br><code style="font-size:10px;word-break:break-all">${text}</code></div>`;
       }
     } catch(err) {
-      res.innerHTML = `<div class="alert alert-error">✗ Failed: <strong>${err.message}</strong></div>`;
+      res.innerHTML = `<div class="alert alert-error">
+        ✗ Network error: <strong>${err.message}</strong><br><br>
+        <strong>Worker URL:</strong> <code style="font-size:10px">${EMAIL_WORKER_URL}</code><br>
+        <strong>Possible causes:</strong><br>
+        • Worker not deployed — visit <a href="${EMAIL_WORKER_URL}" target="_blank" style="color:var(--red-light)">${EMAIL_WORKER_URL}</a> to check<br>
+        • CORS issue — check browser console (F12) for details
+      </div>`;
     }
   };
 
