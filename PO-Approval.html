@@ -2386,25 +2386,22 @@ function renderApiSettings() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          to: 'POApproval@optimal.pt',
+          to: 'poapproval.optimal@gmail.com',
           subject: 'PO Approval Tool — Email Test',
           message: `Test email sent at ${new Date().toLocaleString('en-GB')} by ${state.currentUser?.name||'admin'}.\n\nIf you received this, email delivery is working correctly.`,
         }),
       });
-      const text = await r.text();
-      if (r.ok) {
-        res.innerHTML = `<div class="alert alert-success">✓ Test email sent! Check POApproval@optimal.pt inbox.</div>`;
+      const json = await r.json().catch(() => ({}));
+      if (r.ok && json.success) {
+        res.innerHTML = `<div class="alert alert-success">✓ Email sent successfully! Check poapproval.optimal@gmail.com inbox.<br><small>Brevo status: ${json.brevoStatus}</small></div>`;
       } else {
-        res.innerHTML = `<div class="alert alert-error">✗ Worker returned error (HTTP ${r.status}):<br><code style="font-size:10px;word-break:break-all">${text}</code></div>`;
+        res.innerHTML = `<div class="alert alert-error">✗ Failed (HTTP ${r.status})<br><br>
+          <strong>Brevo status:</strong> ${json.brevoStatus||'unknown'}<br>
+          <strong>Brevo response:</strong> <code style="font-size:10px;word-break:break-all">${json.brevoResult||JSON.stringify(json)}</code>
+        </div>`;
       }
     } catch(err) {
-      res.innerHTML = `<div class="alert alert-error">
-        ✗ Network error: <strong>${err.message}</strong><br><br>
-        <strong>Worker URL:</strong> <code style="font-size:10px">${EMAIL_WORKER_URL}</code><br>
-        <strong>Possible causes:</strong><br>
-        • Worker not deployed — visit <a href="${EMAIL_WORKER_URL}" target="_blank" style="color:var(--red-light)">${EMAIL_WORKER_URL}</a> to check<br>
-        • CORS issue — check browser console (F12) for details
-      </div>`;
+      res.innerHTML = `<div class="alert alert-error">✗ Network error: <strong>${err.message}</strong></div>`;
     }
   };
 
