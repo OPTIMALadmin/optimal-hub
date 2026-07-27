@@ -1275,6 +1275,23 @@ function nest(parts, options){
   });
 
   // ---------------- helpers ----------------
+  // Expands each selected orientation into a small band of candidate angles around
+  // it (e.g. 45° with a 5° tolerance becomes {40, 42.5, 45, 47.5, 50}), letting the
+  // placement search find a slightly better fit than the exact nominal angle would
+  // allow. A step of half the tolerance was found (by direct testing) to capture
+  // essentially all of the benefit a finer step gives, at much lower search cost.
+  function expandAnglesWithTolerance(baseAngles, toleranceDeg){
+    if (!toleranceDeg || toleranceDeg <= 0) return baseAngles.slice();
+    const step = toleranceDeg / 2;
+    const set = new Set();
+    baseAngles.forEach(base => {
+      for (let d = -toleranceDeg; d <= toleranceDeg + 1e-9; d += step){
+        set.add(Math.round((base + d) * 10) / 10);
+      }
+    });
+    return Array.from(set);
+  }
+
   function fmt(n, d){ d = d===undefined?1:d; return Number(n).toLocaleString(undefined, { minimumFractionDigits: d, maximumFractionDigits: d }); }
   function nextColor(){ return COLOR_PALETTE[plyCounter % COLOR_PALETTE.length]; }
   function svgEl(tag, attrs){
@@ -1325,10 +1342,15 @@ function nest(parts, options){
               <label class="field-label">Gap between plies (mm)</label>
               <input type="number" id="plyGap" min="0" step="0.5" value="5">
             </div>
+            <div class="settings-field">
+              <label class="field-label">Angle tolerance (±°)</label>
+              <input type="number" id="angleTolerance" min="0" max="15" step="0.5" value="0">
+            </div>
             <div class="settings-field" style="flex:none;">
               <button type="button" class="btn primary" id="computeBtn">Compute nesting</button>
             </div>
           </div>
+          <div class="ply-meta" style="margin-top:6px;">Lets each selected orientation drift a little either side of its exact value to find a tighter fit — 0 keeps orientations exact.</div>
           <div class="settings-row" style="margin-top:16px; padding-top:16px; border-top:1px solid var(--border-soft);">
             <div class="settings-field">
               <label class="field-label">Optimization iterations</label>
@@ -1502,6 +1524,7 @@ function nest(parts, options){
     if (plies.length === 0){ alert('Add at least one DXF ply before computing a nesting.'); return; }
     const materialWidth = parseFloat(document.getElementById('materialWidth').value);
     const gap = parseFloat(document.getElementById('plyGap').value) || 0;
+    const angleTolerance = parseFloat(document.getElementById('angleTolerance').value) || 0;
     if (!materialWidth || materialWidth <= 0){ alert('Enter a valid material width.'); return; }
 
     const computeBtn = document.getElementById('computeBtn');
@@ -1512,7 +1535,7 @@ function nest(parts, options){
     setTimeout(() => {
       const parts = plies.map(p => ({
         id: p.uid, label: p.name, outline: p.outline, count: p.count,
-        angles: Array.from(p.angles), color: p.color,
+        angles: expandAnglesWithTolerance(Array.from(p.angles), angleTolerance), color: p.color,
         holeLoops: (p.loops || []).filter(l => l !== p.outline)
       }));
       const result = window.NestingEngine.nest(parts, { materialWidth, gap });
@@ -1542,6 +1565,7 @@ function nest(parts, options){
     if (plies.length === 0){ alert('Add at least one DXF ply before computing a nesting.'); return; }
     const materialWidth = parseFloat(document.getElementById('materialWidth').value);
     const gap = parseFloat(document.getElementById('plyGap').value) || 0;
+    const angleTolerance = parseFloat(document.getElementById('angleTolerance').value) || 0;
     if (!materialWidth || materialWidth <= 0){ alert('Enter a valid material width.'); return; }
     let iterations = parseInt(document.getElementById('optimizeIterations').value, 10);
     if (!isFinite(iterations) || iterations < 1) iterations = 1;
@@ -1559,7 +1583,7 @@ function nest(parts, options){
 
     const parts = plies.map(p => ({
       id: p.uid, label: p.name, outline: p.outline, count: p.count,
-      angles: Array.from(p.angles), color: p.color,
+      angles: expandAnglesWithTolerance(Array.from(p.angles), angleTolerance), color: p.color,
       holeLoops: (p.loops || []).filter(l => l !== p.outline)
     }));
 
