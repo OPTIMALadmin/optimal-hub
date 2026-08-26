@@ -1759,8 +1759,8 @@ async function generateApprovedPDF(po, approverName, approvedAt) {
     try {
       const result = await ghFetchFile(po.originalPdfFile);
       if (result && result.raw) {
-        originalB64 = result.raw;
-        console.log('[PDF] Original PDF fetched from GitHub successfully');
+        originalB64 = result.raw.replace(/\s/g, ''); // remove any whitespace/newlines
+        console.log('[PDF] Original PDF fetched from GitHub, size:', originalB64.length);
       }
     } catch(e) {
       console.warn('[PDF] Could not fetch original PDF from GitHub:', e);
@@ -1902,7 +1902,9 @@ async function approvePO(po) {
 
     // Generate watermarked PDF
     try {
+      console.log('[PDF] Starting generation. originalPdfFile:', po.originalPdfFile, 'originalPdfB64 present:', !!po.originalPdfB64);
       po.approvedPdfB64 = await generateApprovedPDF(po, approvedNames, po.approvedAt);
+      console.log('[PDF] Generation complete, size:', po.approvedPdfB64?.length);
       // Save PDF to GitHub storage
       if (po.approvedPdfB64 && ghConfigured()) {
         const pdfFilename = `PO_${(po.poNumber||po.id).replace(/[^a-zA-Z0-9]/g,'_')}_APPROVED.pdf`;
@@ -1916,9 +1918,9 @@ async function approvePO(po) {
         }
       }
     } catch(err) {
-      console.error('PDF generation failed:', err);
+      console.error('[PDF] Generation failed:', err.message, err.stack);
       po.approvedPdfB64 = null;
-      toast('Warning: PDF watermark generation failed.', 'error');
+      toast(`Warning: PDF watermark generation failed: ${err.message}`, 'error', 8000);
     }
 
     addEvent('approved', po.id, u.id, `PO fully approved. Approvers: ${approvedNames}`);
