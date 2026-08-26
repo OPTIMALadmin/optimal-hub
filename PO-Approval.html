@@ -1119,7 +1119,7 @@ function handlePDF(file) {
 }
 
 async function extractWithClaude(base64, filename) {
-  const prompt = `Extract all fields from this Purchase Order PDF and return ONLY a valid JSON object — no markdown, no explanation.
+  const prompt = `Extract the key fields from this Purchase Order PDF and return ONLY a valid JSON object — no markdown, no explanation, no extra text.
 
 JSON structure:
 {
@@ -1136,9 +1136,12 @@ JSON structure:
   "items": [{"description":"...","qty":<number>,"unitPrice":<number>,"total":<number>}]
 }
 
-Use "" for missing strings, 0 for missing numbers. Return only the JSON.`;
+Important:
+- For items, include ALL line items but keep descriptions concise (max 80 chars each)
+- Use "" for missing strings, 0 for missing numbers
+- Ensure the JSON is complete and valid — close all brackets
+- Return ONLY the JSON object, nothing else`;
 
-  // Always read fresh from localStorage — state.apiKey may not be set if pull overwrote it
   const apiKey = localStorage.getItem('po_tool_apikey') || state.apiKey || '';
   console.log('[Extract] API key present:', !!apiKey, 'ends in:', apiKey?.slice(-4));
 
@@ -1154,7 +1157,7 @@ Use "" for missing strings, 0 for missing numbers. Return only the JSON.`;
     },
     body: JSON.stringify({
       model: 'claude-sonnet-4-5',
-      max_tokens: 2000,
+      max_tokens: 8000,  // increased for large POs with many line items
       messages: [{
         role: 'user',
         content: [
@@ -1169,10 +1172,38 @@ Use "" for missing strings, 0 for missing numbers. Return only the JSON.`;
     const err = await resp.json().catch(()=>({}));
     throw new Error(err.error?.message||`API error ${resp.status}`);
   }
+
   const result = await resp.json();
   const text = result.content.map(c=>c.text||'').join('');
-  const clean = text.replace(/```json|```/g,'').trim();
-  return JSON.parse(clean);
+  let clean = text.replace(/```json|```/g,'').trim();
+
+  // Try to parse as-is first
+  try {
+    return JSON.parse(clean);
+  } catch(e) {
+    // Attempt to repair truncated JSON by finding the last complete item
+    console.warn('[Extract] JSON parse failed, attempting repair:', e.message);
+
+    // Find last valid closing brace for items array
+    try {
+      // Try to close off truncated JSON
+      const lastBracket = clean.lastIndexOf('}');
+      if (lastBracket > 0) {
+        let repaired = clean.substring(0, lastBracket + 1);
+        // Count unclosed brackets and close them
+        const opens = (repaired.match(/\[/g)||[]).length;
+        const closes = (repaired.match(/\]/g)||[]).length;
+        const openBraces = (repaired.match(/\{/g)||[]).length;
+        const closeBraces = (repaired.match(/\}/g)||[]).length;
+        for (let i = 0; i < opens - closes; i++) repaired += ']';
+        for (let i = 0; i < openBraces - closeBraces; i++) repaired += '}';
+        return JSON.parse(repaired);
+      }
+    } catch(e2) {
+      console.error('[Extract] JSON repair failed:', e2.message);
+    }
+    throw new Error('Failed to parse extraction response. The PDF may be too complex — please fill in manually.');
+  }
 }
 
 function openManualForm() {
