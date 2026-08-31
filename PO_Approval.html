@@ -556,6 +556,8 @@ function normaliseCompany(name) {
     .trim()
     // Strip optional comma + common legal suffixes
     .replace(/,?\s*\b(LDA\.?|SA\.?|S\.A\.?|LTD\.?|LLC\.?|INC\.?|PLC\.?|GMBH\.?|SRL\.?|SL\.?|BV\.?|NV\.?)\s*$/,'')
+    // Strip any remaining trailing comma or punctuation
+    .replace(/[,;.\s]+$/,'')
     .trim();
 }
 
