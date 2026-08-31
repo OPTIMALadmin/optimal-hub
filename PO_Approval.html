@@ -2827,7 +2827,15 @@ function renderApiSettings() {
   if (ghOk) {
     ghCard.querySelector('#gh-push-btn').onclick = async () => {
       const res = document.getElementById('gh-result');
-      res.innerHTML='<div class="alert alert-info">Pushing data to GitHub…</div>';
+      res.innerHTML='<div class="alert alert-info">Normalising company names and pushing to GitHub…</div>';
+      // Normalise all company names first
+      let count = 0;
+      state.pos.forEach(po => {
+        if (po.company) {
+          const clean = normaliseCompany(po.company);
+          if (clean !== po.company) { po.company = clean; count++; }
+        }
+      });
       const fetched = await ghFetch();
       if (fetched === null) {
         res.innerHTML=`<div class="alert alert-error">✗ Cannot reach GitHub — check your token.<br>${state._ghError||''}</div>`;
@@ -2836,8 +2844,9 @@ function renderApiSettings() {
       state._ghSha = fetched.sha;
       const ok = await ghWrite({ users: state.users, pos: state.pos, archive: state.archive }, state._ghSha);
       res.innerHTML = ok
-        ? '<div class="alert alert-success">✓ Data pushed to GitHub successfully.</div>'
+        ? `<div class="alert alert-success">✓ Data pushed to GitHub successfully${count>0?` (fixed ${count} company name(s))`:''}.</div>`
         : `<div class="alert alert-error">✗ Push failed: ${state._ghError||'unknown error'}</div>`;
+      if (ok) saveState();
     };
     ghCard.querySelector('#gh-pull-btn').onclick = async () => {
       const res = document.getElementById('gh-result');
