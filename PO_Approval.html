@@ -549,6 +549,16 @@ async function ghDownloadPDF(filename) {
   }
 }
 
+// ---- Company name normalisation (must be defined before loadState) ----
+function normaliseCompany(name) {
+  return String(name||'')
+    .toUpperCase()
+    .trim()
+    // Strip optional comma + common legal suffixes
+    .replace(/,?\s*\b(LDA\.?|SA\.?|S\.A\.?|LTD\.?|LLC\.?|INC\.?|PLC\.?|GMBH\.?|SRL\.?|SL\.?|BV\.?|NV\.?)\s*$/,'')
+    .trim();
+}
+
 // ---- State load/save ----------------------------------------
 function loadState() {
   try {
@@ -666,7 +676,13 @@ async function ghPull() {
   }
 
   // Migrate: normalise all PO company names to remove suffix variants and fix casing
+  const hadDirtyNames = state.pos.some(po => po.company && po.company !== normaliseCompany(po.company));
   state.pos.forEach(po => { if (po.company) po.company = normaliseCompany(po.company); });
+  // If we cleaned up names, push immediately so all users get the clean version
+  if (hadDirtyNames) {
+    console.log('[Migration] Normalised company names, pushing to GitHub…');
+    ghPush().then(() => console.log('[Migration] Push complete'));
+  }
 
   // Update local cache
   try {
@@ -690,15 +706,6 @@ function getLevel(amount) {
 
 // Get the approval groups for a given company + level
 // Returns array of groups; each group = array of logins (ALL must approve)
-function normaliseCompany(name) {
-  return String(name||'')
-    .toUpperCase()
-    .trim()
-    // Strip optional comma + common legal suffixes
-    .replace(/,?\s*\b(LDA\.?|SA\.?|S\.A\.?|LTD\.?|LLC\.?|INC\.?|PLC\.?|GMBH\.?|SRL\.?|SL\.?|BV\.?|NV\.?)\s*$/,'')
-    .trim();
-}
-
 function getApprovalGroups(company, level) {
   if (!company || !level) return [];
   const normInput = normaliseCompany(company);
