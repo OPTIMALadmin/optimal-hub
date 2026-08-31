@@ -4,7 +4,6 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>PO Approval Tool — OPTIMAL</title>
-<script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/pdf-lib@1.17.1/dist/pdf-lib.min.js"></script>
 <style>
 @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;600;700&display=swap');
@@ -240,15 +239,14 @@ tbody tr:hover td{background:var(--surface2)}
 // ============================================================
 const INITIAL_USERS = [
   { id:'admin',  login:'admin',           pass:'adminOPTIMAL',           name:'Administrator',   email:'POApproval@optimal.pt',         role:'admin', levels:[] },
-  { id:'u1',     login:'antonio.reis',    pass:'antonio.reisOPTIMAL',    name:'António Reis',    email:'antonio.reis@optimal.pt',        role:'user',  levels:[1,2,3] },
+  { id:'u1',     login:'antonio.reis',    pass:'antonio.reisOPTIMAL',    name:'Antonio Reis',    email:'antonio.reis@optimal.pt',        role:'user',  levels:[1,2,3] },
   { id:'u2',     login:'manuel.torres',   pass:'manuel.torresOPTIMAL',   name:'Manuel Torres',   email:'manuel.torrestest@optimal.pt',   role:'user',  levels:[1,2,3] },
   { id:'u3',     login:'jorge.subtil',    pass:'jorge.subtilOPTIMAL',    name:'Jorge Subtil',    email:'jorge.subtiltest@optimal.pt',    role:'user',  levels:[1] },
   { id:'u4',     login:'celeste.pereira', pass:'celeste.pereiraOPTIMAL', name:'Celeste Pereira', email:'celeste.pereiratest@optimal.pt', role:'user',  levels:[1,2] },
   { id:'u5',     login:'mauro.lopes',     pass:'mauro.lopesOPTIMAL',     name:'Mauro Lopes',     email:'mauro.lopestest@optimal.pt',     role:'user',  levels:[] },
   { id:'u6',     login:'bruno.carvalho', pass:'bruno.carvalhoASC',       name:'Bruno Carvalho',  email:'bruno.carvalhotest@optimal.pt',  role:'user',  levels:[] },
   { id:'u7',     login:'ivo.costa',      pass:'ivo.costaOPTIMAL',        name:'Ivo Costa',       email:'ivo.costatest@optimal.pt',       role:'user',  levels:[] },
-  { id:'u8',     login:'joao.ferreira',  pass:'joao.ferreiraOPTIMAL',    name:'João Ferreira',   email:'joao.ferreiratest@optimal.pt',   role:'user',  levels:[] },
-  { id:'u9',     login:'joao.pinto',     pass:'joao.pintoOPTIMAL',       name:'João Pinto',      email:'joao.pintotest@optimal.pt',      role:'user',  levels:[] },
+  { id:'u8',     login:'joao.ferreira',  pass:'joao.ferreiraOPTIMAL',    name:'Joao Ferreira',   email:'joao.ferreiratest@optimal.pt',   role:'user',  levels:[] },
 ];
 
 // ── Approval level thresholds ────────────────────────────────────────────────
@@ -285,18 +283,18 @@ const APPROVAL_MATRIX = {
   },
   'OPTIMAL SPACE': {
     1: [['ivo.costa'], ['celeste.pereira'], ['antonio.reis'], ['manuel.torres']],
-    2: [['celeste.pereira'], ['antonio.reis'], ['manuel.torres']],
+    2: [['celeste.pereira','antonio.reis'], ['celeste.pereira','manuel.torres'], ['antonio.reis','manuel.torres']],
     3: [['celeste.pereira','antonio.reis','manuel.torres']],
   },
   'OPTIMAL HIGH VOLUME': {
-    1: [['jorge.subtil'], ['joao.pinto'], ['antonio.reis'], ['manuel.torres']],
+    1: [['jorge.subtil'], ['antonio.reis'], ['manuel.torres']],
     2: [['antonio.reis'], ['manuel.torres']],
     3: [['antonio.reis','manuel.torres']],
   },
   'OPTIMAL MARINE': {
     1: [['jorge.subtil'], ['antonio.reis'], ['manuel.torres']],
-    2: [['joao.pinto'], ['antonio.reis'], ['manuel.torres']],
-    3: [['joao.pinto','antonio.reis','manuel.torres']],
+    2: [['antonio.reis','manuel.torres']],
+    3: [['antonio.reis','manuel.torres']],
   },
   'ATLANTIC SPACEPORT CONSORTIUM': {
     1: [['bruno.carvalho','antonio.reis','manuel.torres']],
@@ -319,36 +317,363 @@ let state = {
   reviewSource: null,
   reviewPdfB64: null,
   reviewPdfName: null,
+  ghSyncing: false,
+  _ghSha: null,
+  _ghError: null,
+  emailJSReachable: null, // null=untested, true=ok, false=blocked
   apiKey: '',
 };
 
 // ---- Persistence (localStorage) ----
+// ============================================================
+// GITHUB STORAGE BACKEND
+// ============================================================
+const GH_DATA_FILE = 'po_data.json';
+const GH_PDF_FOLDER = 'pdfs';
+
+// GitHub config — owner/repo/branch embedded, only PAT stored per-browser
+const GH_OWNER  = 'optimaladmin';
+const GH_REPO   = 'po-data';
+const GH_BRANCH = 'main';
+
+function getGHConfig() {
+  return {
+    token:  localStorage.getItem('po_gh_token') || '',
+    owner:  GH_OWNER,
+    repo:   GH_REPO,
+    branch: GH_BRANCH,
+  };
+}
+function saveGHConfig(token) {
+  localStorage.setItem('po_gh_token', token);
+}
+function ghConfigured() {
+  return !!localStorage.getItem('po_gh_token');
+}
+
+function ghApiUrl(path) {
+  const c = getGHConfig();
+  return `https://api.github.com/repos/${c.owner}/${c.repo}/contents/${path}`;
+}
+function ghHeaders() {
+  return {
+    'Authorization': `token ${getGHConfig().token}`,
+    'Content-Type':  'application/json',
+    'Accept':        'application/vnd.github.v3+json',
+  };
+}
+
+// Generic GitHub file fetch — returns { data (decoded string), sha } or null
+async function ghFetchFile(path) {
+  if (!ghConfigured()) return null;
+  try {
+    const r = await fetch(ghApiUrl(path) + `?ref=${getGHConfig().branch}&t=${Date.now()}`, {
+      headers: ghHeaders(),
+    });
+    if (r.status === 404) return { data: null, sha: null };
+    if (!r.ok) { console.error('[GH] Fetch failed:', r.status, await r.text()); return null; }
+    const json = await r.json();
+    return { raw: json.content.replace(/\n/g,''), sha: json.sha };
+  } catch(e) {
+    console.error('[GH] Fetch error:', e); return null;
+  }
+}
+
+// Generic GitHub file write
+async function ghWriteFile(path, base64Content, sha, message) {
+  if (!ghConfigured()) return null;
+  try {
+    const body = {
+      message: message || `PO Tool update — ${new Date().toISOString()}`,
+      content: base64Content,
+      branch:  getGHConfig().branch,
+    };
+    if (sha) body.sha = sha;
+    const r = await fetch(ghApiUrl(path), {
+      method: 'PUT', headers: ghHeaders(), body: JSON.stringify(body),
+    });
+    if (!r.ok) {
+      const text = await r.text();
+      state._ghError = `HTTP ${r.status}: ${text}`;
+      console.error('[GH] Write failed:', r.status, text);
+      return null;
+    }
+    const json = await r.json();
+    state._ghError = null;
+    return json.content.sha;
+  } catch(e) {
+    state._ghError = `Network error: ${e.message}`;
+    console.error('[GH] Write error:', e);
+    return null;
+  }
+}
+
+// ---- Main data JSON fetch/write ----
+async function ghFetch() {
+  if (!ghConfigured()) return null;
+  try {
+    const c = getGHConfig();
+    console.log('[GH] Fetching from:', `${c.owner}/${c.repo}`, 'branch:', c.branch);
+    const r = await fetch(
+      `https://api.github.com/repos/${c.owner}/${c.repo}/contents/${GH_DATA_FILE}?ref=${c.branch}&t=${Date.now()}`,
+      { headers: ghHeaders() }
+    );
+    console.log('[GH] Fetch response status:', r.status);
+    if (r.status === 404) return { data: null, sha: null };
+    if (r.status === 401) { state._ghError = 'Authentication failed (401) — check your PAT token'; return null; }
+    if (r.status === 403) { state._ghError = 'Access forbidden (403) — PAT may lack repo permissions'; return null; }
+    if (!r.ok) {
+      const text = await r.text();
+      state._ghError = `HTTP ${r.status}: ${text}`;
+      console.error('[GH] Fetch failed:', r.status, text);
+      return null;
+    }
+    const json = await r.json();
+    const raw = json.content.replace(/\n/g,'');
+    try {
+      // Decode base64 to bytes then UTF-8 decode
+      const binaryStr = atob(raw);
+      const bytes = new Uint8Array(binaryStr.length);
+      for (let i = 0; i < binaryStr.length; i++) bytes[i] = binaryStr.charCodeAt(i);
+      const jsonStr = new TextDecoder('utf-8').decode(bytes);
+      const data = JSON.parse(jsonStr);
+      state._ghError = null;
+      return { data, sha: json.sha };
+    } catch(e) {
+      console.error('[GH] JSON parse/decode error:', e);
+      return { data: null, sha: json.sha };
+    }
+  } catch(e) {
+    state._ghError = `Network error: ${e.message}`;
+    console.error('[GH] Fetch network error:', e);
+    return null;
+  }
+}
+
+async function ghWrite(data, sha) {
+  const clean = {
+    users:   data.users,
+    archive: data.archive,
+    apiKey:  localStorage.getItem('po_tool_apikey') || state.apiKey || '',
+    ghToken: localStorage.getItem('po_gh_token') || '',
+    pos:     (data.pos||[]).map(po => {
+      const {approvedPdfB64, originalPdfB64, ...rest} = po;
+      return rest;
+    }),
+  };
+
+  // Safe base64 encoding that handles large data and special characters
+  const jsonStr = JSON.stringify(clean, null, 2);
+  let b64;
+  try {
+    // Use TextEncoder + chunked btoa for large/UTF-8 data
+    const bytes = new TextEncoder().encode(jsonStr);
+    let binary = '';
+    const chunkSize = 8192;
+    for (let i = 0; i < bytes.length; i += chunkSize) {
+      binary += String.fromCharCode(...bytes.subarray(i, i + chunkSize));
+    }
+    b64 = btoa(binary);
+  } catch(e) {
+    console.error('[GH] Encoding error:', e);
+    state._ghError = 'Encoding error: ' + e.message;
+    return false;
+  }
+
+  console.log('[GH] Writing', jsonStr.length, 'chars,', b64.length, 'base64 chars, sha:', sha);
+
+  const newSha = await ghWriteFile(
+    GH_DATA_FILE,
+    b64,
+    sha,
+    `PO data update — ${new Date().toISOString()}`
+  );
+  if (newSha) {
+    state._ghSha = newSha;
+    state._ghError = null;
+    console.log('[GH] Data saved OK, new sha:', newSha);
+    return true;
+  }
+  state._ghError = state._ghError || 'Write failed — SHA conflict or permission denied';
+  console.error('[GH] Write failed, error:', state._ghError);
+  return false;
+}
+
+// ---- PDF storage ----
+// Save a PDF to GitHub — filename can include subfolder (e.g. 'originals/file.pdf')
+async function ghSavePDF(pdfB64, filename) {
+  if (!ghConfigured() || !pdfB64) return false;
+  // If filename already contains a /, use as-is; otherwise prepend pdfs/
+  const path = filename.includes('/') ? filename : `${GH_PDF_FOLDER}/${filename}`;
+  const existing = await ghFetchFile(path);
+  const sha = existing?.sha || null;
+  const newSha = await ghWriteFile(path, pdfB64, sha, `PDF: ${filename}`);
+  return !!newSha;
+}
+
+// Get the public raw URL for a PDF stored in the repo
+function ghPdfUrl(filename) {
+  const c = getGHConfig();
+  // Use GitHub API download URL
+  return `https://api.github.com/repos/${c.owner}/${c.repo}/contents/${GH_PDF_FOLDER}/${filename}?ref=${c.branch}`;
+}
+
+// Download a PDF from GitHub and trigger browser download
+async function ghDownloadPDF(filename) {
+  if (!ghConfigured()) return false;
+  try {
+    // Try pdfs/ folder first, then root, then as-is path
+    const paths = [
+      `${GH_PDF_FOLDER}/${filename}`,
+      filename,
+    ];
+    let result = null;
+    for (const path of paths) {
+      result = await ghFetchFile(path);
+      if (result && result.raw) break;
+      result = null;
+    }
+    if (!result || !result.raw) {
+      toast('PDF not found in GitHub storage — it may have been approved before PDF storage was enabled.', 'error', 7000);
+      return false;
+    }
+    const link = document.createElement('a');
+    link.href = 'data:application/pdf;base64,' + result.raw;
+    link.download = filename.split('/').pop(); // just the filename part
+    link.click();
+    return true;
+  } catch(e) {
+    console.error('[GH] PDF download error:', e);
+    toast('Failed to download PDF: ' + e.message, 'error');
+    return false;
+  }
+}
+
+// ---- State load/save ----------------------------------------
 function loadState() {
   try {
+    // Load from localStorage cache first (fast, works offline)
     const s = JSON.parse(localStorage.getItem('po_tool_optimal') || '{}');
     state.users   = s.users   || JSON.parse(JSON.stringify(INITIAL_USERS));
     state.pos     = s.pos     || [];
     state.archive = s.archive || [];
     state.apiKey  = localStorage.getItem('po_tool_apikey') || '';
+    state._ghSha  = s._ghSha  || null;
 
-    // Migration: add any new users from INITIAL_USERS that don't exist in saved state
+    // Only add INITIAL_USERS entries completely absent from saved state
+    // If a user was deleted (not in saved state and not in saved IDs), don't re-add them
+    const savedIds = state.users.map(u => u.id);
+    const savedLogins = state.users.map(u => u.login);
     INITIAL_USERS.forEach(iu => {
-      if (!state.users.find(u => u.id === iu.id || u.login === iu.login)) {
-        state.users.push({...iu});
+      if (!savedIds.includes(iu.id) && !savedLogins.includes(iu.login)) {
+        // Only add if localStorage has no users at all (fresh install)
+        // If localStorage has users but this one is missing, it was deleted — respect that
+        if (!s.users || s.users.length === 0) state.users.push({...iu});
       }
     });
-
   } catch(e) {
     state.users = JSON.parse(JSON.stringify(INITIAL_USERS));
     state.pos = []; state.archive = [];
   }
 }
+
 function saveState() {
+  // Save to localStorage — strip PDF blobs to keep size small
   try {
-    localStorage.setItem('po_tool_optimal', JSON.stringify({users:state.users,pos:state.pos,archive:state.archive}));
+    const posClean = state.pos.map(po => {
+      const {approvedPdfB64, originalPdfB64, ...rest} = po;
+      return rest;
+    });
+    localStorage.setItem('po_tool_optimal', JSON.stringify({
+      users: state.users, pos: posClean, archive: state.archive, _ghSha: state._ghSha
+    }));
     if (state.apiKey) localStorage.setItem('po_tool_apikey', state.apiKey);
   } catch(e) {}
+
+  // Push to GitHub if configured
+  if (ghConfigured()) {
+    ghPush().then(ok => {
+      if (!ok) console.warn('[GH] saveState push failed:', state._ghError);
+    }).catch(e => console.error('[GH] Push error:', e));
+  }
 }
+
+// Push current state to GitHub — returns true on success
+async function ghPush() {
+  const data = { users: state.users, pos: state.pos, archive: state.archive };
+  // Try up to 3 times with fresh SHA each time
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    const fetched = await ghFetch();
+    if (fetched === null) { console.error('[GH] Push: cannot reach GitHub'); return false; }
+    state._ghSha = fetched.sha;
+    const ok = await ghWrite(data, state._ghSha);
+    if (ok) { console.log('[GH] Push succeeded on attempt', attempt); return true; }
+    console.warn('[GH] Push attempt', attempt, 'failed:', state._ghError);
+    if (attempt < 3) await new Promise(r => setTimeout(r, 500)); // wait before retry
+  }
+  return false;
+}
+
+// Pull latest data from GitHub and merge into state
+async function ghPull() {
+  if (!ghConfigured()) return false;
+  state.ghSyncing = true; render();
+  const result = await ghFetch();
+  state.ghSyncing = false;
+
+  if (result === null) {
+    // null = actual connection/network failure
+    return false;
+  }
+
+  if (!result.data) {
+    // File doesn't exist yet or is empty — this is OK on first run
+    // Push our current local state up to create the file
+    console.log('[GH] No data file yet — pushing local state to GitHub');
+    state._ghSha = result.sha;
+    await ghPush();
+    return true;
+  }
+
+  const d = result.data;
+  state.users   = d.users   || state.users;
+  state.pos     = d.pos     || state.pos;
+  state.archive = d.archive || state.archive;
+  state._ghSha  = result.sha;
+
+  // API key: prefer local (more private), but restore from GitHub if missing locally
+  const localApiKey = localStorage.getItem('po_tool_apikey') || '';
+  if (localApiKey) {
+    state.apiKey = localApiKey; // local wins
+  } else if (d.apiKey) {
+    state.apiKey = d.apiKey; // restore from GitHub
+    localStorage.setItem('po_tool_apikey', d.apiKey);
+    console.log('[GH] API key restored from GitHub');
+  }
+
+  // PAT token: restore from GitHub data if not set locally
+  if (d.ghToken && !localStorage.getItem('po_gh_token')) {
+    localStorage.setItem('po_gh_token', d.ghToken);
+    console.log('[GH] PAT token restored from GitHub data');
+  }
+
+  // If GitHub has no users at all (brand new file), seed from INITIAL_USERS
+  // Otherwise trust GitHub completely — it is the source of truth
+  if (!d.users || d.users.length === 0) {
+    state.users = JSON.parse(JSON.stringify(INITIAL_USERS));
+  }
+
+  // Update local cache
+  try {
+    const posClean = state.pos.map(po => { const {approvedPdfB64, originalPdfB64, ...rest} = po; return rest; });
+    localStorage.setItem('po_tool_optimal', JSON.stringify({
+      users: state.users, pos: posClean, archive: state.archive, _ghSha: state._ghSha
+    }));
+  } catch(e) {}
+  console.log('[GH] Pulled latest data, sha:', state._ghSha);
+  return true;
+}
+
 loadState();
 
 // ---- Helpers ----
@@ -433,6 +758,7 @@ function getApprovalStatus(po) {
 function pendingCount() {
   const u = state.currentUser; if (!u) return 0;
   return state.pos.filter(p => {
+    if (p.status === 'deleted') return false;
     if (p.status !== 'pending') return false;
     if (u.role === 'admin') return true;
     const groups = getApprovalGroups(p.company, p.approvalLevel);
@@ -452,24 +778,27 @@ function addEvent(type, poId, userId, message) {
   saveState();
 }
 // ---- EmailJS config ----
-const EMAILJS_SERVICE_ID  = 'service_jypdkrp';
-const EMAILJS_TEMPLATE_ID = 'template_uge12ij';
-const EMAILJS_PUBLIC_KEY  = 'wtS4KdSX8P9ihISpT';
-emailjs.init(EMAILJS_PUBLIC_KEY);
+const EMAIL_WORKER_URL = 'https://po-email2.antonio-g-reis.workers.dev';
 
 async function sendEmail(to, subject, message, poId) {
   state.archive.unshift({ id:uid(), type:'email', to, subject, poId, ts:new Date().toISOString() });
   saveState();
   try {
-    const response = await emailjs.send(
-      EMAILJS_SERVICE_ID,
-      EMAILJS_TEMPLATE_ID,
-      { to_email: to, subject: subject, message: message }
-    );
-    console.log('[EmailJS] Sent to', to, response.status, response.text);
+    const response = await fetch(EMAIL_WORKER_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ to, subject, message }),
+    });
+    if (response.ok) {
+      console.log('[Email] Sent to', to);
+    } else {
+      const err = await response.text();
+      console.error('[Email] Failed:', response.status, err);
+      toast(`Email failed to ${to}: ${err}`, 'error', 6000);
+    }
   } catch(err) {
-    console.error('[EmailJS] Failed:', err);
-    toast(`Email failed: ${err?.text || err?.message || JSON.stringify(err)}`, 'error', 6000);
+    console.error('[Email] Network error:', err);
+    toast(`Email network error: ${err.message}`, 'error', 6000);
   }
 }
 
@@ -514,19 +843,67 @@ function renderLogin() {
       <div id="login-err"></div>
       <div class="form-group"><label>Username</label><input type="text" id="lu" placeholder="enter login" autocomplete="username"></div>
       <div class="form-group"><label>Password</label><input type="password" id="lp" placeholder="••••••••••••" autocomplete="current-password"></div>
-      <button class="btn btn-primary" style="width:100%;justify-content:center;padding:10px" onclick="doLogin()">Sign In →</button>
+      ${!localStorage.getItem('po_gh_token') ? `
+      <div style="border-top:1px solid var(--border);margin:16px 0 14px;padding-top:16px">
+        <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.1em;color:var(--amber);margin-bottom:10px">⚙ First time on this computer</div>
+        <div class="form-group" style="margin-bottom:10px">
+          <label>GitHub PAT Token <span style="color:var(--text3);text-transform:none;letter-spacing:0;font-weight:400">(shared data sync)</span></label>
+          <input type="password" id="lp-gh" placeholder="ghp_xxxxxxxxxxxx">
+        </div>
+        <div class="form-group" style="margin-bottom:4px">
+          <label>Anthropic API Key <span style="color:var(--text3);text-transform:none;letter-spacing:0;font-weight:400">(PDF extraction)</span></label>
+          <input type="password" id="lp-ak" placeholder="sk-ant-...">
+        </div>
+        <p style="font-size:10px;color:var(--text3);margin-bottom:10px;line-height:1.5">Saved to this browser only. Leave blank to configure later in Admin → API Key.</p>
+      </div>` : ''}
+      <button class="btn btn-primary" style="width:100%;justify-content:center;padding:10px" id="login-submit-btn" onclick="doLogin()">Sign In →</button>
     </div>`;
   page.querySelector('#lp').addEventListener('keydown', e=>{ if(e.key==='Enter') doLogin(); });
   setTimeout(()=>{ const i=document.getElementById('lu'); if(i)i.focus(); },50);
   return page;
 }
-function doLogin() {
+async function testEmailJS() {
+  try {
+    const r = await fetch(EMAIL_WORKER_URL, { method: 'OPTIONS' });
+    state.emailJSReachable = true;
+    console.log('[Worker] Reachable, status:', r.status);
+  } catch(e) {
+    state.emailJSReachable = false;
+    console.warn('[Worker] Not reachable:', e.message);
+  }
+}
+
+async function doLogin() {
   const login = document.getElementById('lu')?.value.trim();
   const pass  = document.getElementById('lp')?.value;
-  const user  = state.users.find(u=>u.login===login&&u.pass===pass);
-  if (!user) { document.getElementById('login-err').innerHTML='<div class="alert alert-error">Invalid username or password.</div>'; return; }
+
+  // Save tokens if entered on first-time setup (do this before pull)
+  const ghToken = document.getElementById('lp-gh')?.value.trim();
+  const akToken = document.getElementById('lp-ak')?.value.trim();
+  if (ghToken) localStorage.setItem('po_gh_token', ghToken);
+  if (akToken) { localStorage.setItem('po_tool_apikey', akToken); state.apiKey = akToken; }
+
+  // Pull latest data from GitHub BEFORE validating credentials
+  // so newly added users on other computers are recognised
+  if (ghConfigured()) {
+    const loginBtn = document.getElementById('login-submit-btn');
+    if (loginBtn) { loginBtn.disabled = true; loginBtn.textContent = '⟳ Syncing with GitHub…'; }
+    const ok = await ghPull();
+    if (loginBtn) { loginBtn.disabled = false; loginBtn.textContent = 'Sign In →'; }
+    if (!ok) console.warn('[Login] GitHub pull failed — using local data');
+  }
+
+  // Validate against the freshly pulled user list
+  const user = state.users.find(u => u.login === login && u.pass === pass);
+  if (!user) {
+    document.getElementById('login-err').innerHTML = '<div class="alert alert-error">Invalid username or password.</div>';
+    return;
+  }
+
   state.loggedIn = true; state.currentUser = user; state.page = 'dashboard';
   state.reviewData = null; state.reviewItems = []; state.modal = null;
+  testEmailJS();
+  toast('Synced with GitHub ✓');
   render();
 }
 
@@ -547,6 +924,7 @@ function renderApp() {
     <div class="topbar-sep"></div>
     <div class="topbar-user">Logged in as <strong>${esc(u.login)}</strong></div>
     <div class="topbar-right">
+      ${ghConfigured()?`<button onclick="manualSync()" style="background:transparent;border:1px solid var(--border);color:var(--text2);padding:5px 10px;border-radius:var(--radius);cursor:pointer;font-family:var(--font);font-size:10px;letter-spacing:0.06em;text-transform:uppercase">${state.ghSyncing?"⟳ Syncing…":"⟳ Sync"}</button>`:""}
       <img src="data:image/png;base64,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" style="height:70px;width:auto;border-radius:4px" alt="Optimal Group">
     </div>`;
   wrap.appendChild(topbar);
@@ -573,6 +951,7 @@ function renderApp() {
       <a onclick="nav('archive')" class="${state.page==='archive'?'active':''}">${svgIcon('archive')} Archive</a>
       <a onclick="nav('changepassword')" class="${state.page==='changepassword'?'active':''}">${svgIcon('key')} Change Password</a>
       ${isAdmin?`<div class="nav-section">Admin</div>
+      <a onclick="nav('analytics')" class="${state.page==='analytics'?'active':''}">${svgIcon('chart')} Data Analysis</a>
       <a onclick="nav('users')" class="${state.page==='users'?'active':''}">${svgIcon('users')} Users</a>
       <a onclick="nav('parameters')" class="${state.page==='parameters'?'active':''}">${svgIcon('settings')} Parameters</a>
       <a onclick="nav('apisettings')" class="${state.page==='apisettings'?'active':''}">${svgIcon('key')} API Key${!state.apiKey?' <span style="color:var(--amber);margin-left:4px">⚠</span>':''}</a>`:''}
@@ -582,7 +961,7 @@ function renderApp() {
 
   // --- Main content ---
   const main = document.createElement('div'); main.className = 'main';
-  const pages = { dashboard:renderDashboard, upload:renderUpload, review:renderReviewForm, pos:renderPOList, pending:renderPending, 'po-detail':renderPODetail, archive:renderArchive, users:renderUsers, parameters:renderParameters, apisettings:renderApiSettings, changepassword:renderChangePassword };
+  const pages = { dashboard:renderDashboard, upload:renderUpload, review:renderReviewForm, pos:renderPOList, pending:renderPending, 'po-detail':renderPODetail, archive:renderArchive, users:renderUsers, parameters:renderParameters, apisettings:renderApiSettings, changepassword:renderChangePassword, analytics:renderAnalytics };
   const pageFn = pages[state.page] || renderDashboard;
   main.appendChild(pageFn());
   body.appendChild(main);
@@ -596,6 +975,12 @@ function renderApp() {
 
 function nav(page) { state.page=page; state.modal=null; render(); }
 function doLogout() { state.loggedIn=false; state.currentUser=null; state.reviewData=null; state.modal=null; render(); }
+async function manualSync() {
+  if (state.ghSyncing) return;
+  const ok = await ghPull();
+  if (ok) { toast('Synced with GitHub ✓'); render(); }
+  else toast('GitHub sync failed — check config in Admin → API Key', 'error', 5000);
+}
 
 // ============================================================
 // DASHBOARD
@@ -603,6 +988,7 @@ function doLogout() { state.loggedIn=false; state.currentUser=null; state.review
 function renderDashboard() {
   const u=state.currentUser, isAdmin=u.role==='admin';
   const myPending = state.pos.filter(p => {
+    if (p.status === 'deleted') return false;
     if (p.status !== 'pending') return false;
     if (isAdmin) return true;
     const groups = getApprovalGroups(p.company, p.approvalLevel);
@@ -617,8 +1003,8 @@ function renderDashboard() {
       <p>${new Date().toLocaleDateString('en-GB',{weekday:'long',year:'numeric',month:'long',day:'numeric'})}</p>
     </div>
     <div class="stats-row">
-      <div class="stat-card"><div class="label">Total POs</div><div class="value">${state.pos.length}</div></div>
-      <div class="stat-card"><div class="label">Pending</div><div class="value" style="color:var(--amber)">${state.pos.filter(p=>p.status==='pending').length}</div></div>
+      <div class="stat-card"><div class="label">Total POs</div><div class="value">${state.pos.filter(p=>p.status!=='deleted').length}</div></div>
+      <div class="stat-card"><div class="label">Pending</div><div class="value" style="color:var(--amber)">${state.pos.filter(p=>p.status==='pending'&&p.status!=='deleted').length}</div></div>
       <div class="stat-card"><div class="label">Approved</div><div class="value" style="color:var(--green)">${state.pos.filter(p=>p.status==='approved').length}</div></div>
       <div class="stat-card"><div class="label">Awaiting Me</div><div class="value" style="color:var(--blue)">${myPending.length}</div></div>
     </div>`;
@@ -671,7 +1057,7 @@ function renderUpload() {
       </button>
     </div>
     <p style="font-size:11px;color:var(--text3);margin-top:8px;text-align:center">PDF is read locally — your file never leaves your computer</p>
-    ${!state.apiKey ? `<div class="alert alert-warning" style="margin-top:12px;font-size:12px">⚠️ No API key set. <a onclick="nav('apisettings')" style="color:var(--amber);font-weight:600;cursor:pointer">Configure it here</a> before uploading a PDF.</div>` : ''}`;
+    ${!(state.apiKey || localStorage.getItem('po_tool_apikey')) ? `<div class="alert alert-warning" style="margin-top:12px;font-size:12px">⚠️ No API key set. <a onclick="nav('apisettings')" style="color:var(--amber);font-weight:600;cursor:pointer">Configure it here</a> before uploading a PDF.</div>` : ''}`;
 
   // Option B — Manual
   const optB = document.createElement('div'); optB.className='upload-option'; optB.style.cursor='pointer';
@@ -736,7 +1122,7 @@ function handlePDF(file) {
 }
 
 async function extractWithClaude(base64, filename) {
-  const prompt = `Extract all fields from this Purchase Order PDF and return ONLY a valid JSON object — no markdown, no explanation.
+  const prompt = `Extract the key fields from this Purchase Order PDF and return ONLY a valid JSON object — no markdown, no explanation, no extra text.
 
 JSON structure:
 {
@@ -753,21 +1139,28 @@ JSON structure:
   "items": [{"description":"...","qty":<number>,"unitPrice":<number>,"total":<number>}]
 }
 
-Use "" for missing strings, 0 for missing numbers. Return only the JSON.`;
+Important:
+- For items, include ALL line items but keep descriptions concise (max 80 chars each)
+- Use "" for missing strings, 0 for missing numbers
+- Ensure the JSON is complete and valid — close all brackets
+- Return ONLY the JSON object, nothing else`;
 
-  if (!state.apiKey) throw new Error('No API key configured. Please go to Admin → API Key and enter your Anthropic API key.');
+  const apiKey = localStorage.getItem('po_tool_apikey') || state.apiKey || '';
+  console.log('[Extract] API key present:', !!apiKey, 'ends in:', apiKey?.slice(-4));
+
+  if (!apiKey) throw new Error('No API key configured. Please go to Admin → API Key and enter your Anthropic API key.');
 
   const resp = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
     headers: {
       'Content-Type':'application/json',
-      'x-api-key': state.apiKey,
+      'x-api-key': apiKey,
       'anthropic-version': '2023-06-01',
       'anthropic-dangerous-direct-browser-access':'true'
     },
     body: JSON.stringify({
       model: 'claude-sonnet-4-5',
-      max_tokens: 2000,
+      max_tokens: 8000,  // increased for large POs with many line items
       messages: [{
         role: 'user',
         content: [
@@ -782,10 +1175,38 @@ Use "" for missing strings, 0 for missing numbers. Return only the JSON.`;
     const err = await resp.json().catch(()=>({}));
     throw new Error(err.error?.message||`API error ${resp.status}`);
   }
+
   const result = await resp.json();
   const text = result.content.map(c=>c.text||'').join('');
-  const clean = text.replace(/```json|```/g,'').trim();
-  return JSON.parse(clean);
+  let clean = text.replace(/```json|```/g,'').trim();
+
+  // Try to parse as-is first
+  try {
+    return JSON.parse(clean);
+  } catch(e) {
+    // Attempt to repair truncated JSON by finding the last complete item
+    console.warn('[Extract] JSON parse failed, attempting repair:', e.message);
+
+    // Find last valid closing brace for items array
+    try {
+      // Try to close off truncated JSON
+      const lastBracket = clean.lastIndexOf('}');
+      if (lastBracket > 0) {
+        let repaired = clean.substring(0, lastBracket + 1);
+        // Count unclosed brackets and close them
+        const opens = (repaired.match(/\[/g)||[]).length;
+        const closes = (repaired.match(/\]/g)||[]).length;
+        const openBraces = (repaired.match(/\{/g)||[]).length;
+        const closeBraces = (repaired.match(/\}/g)||[]).length;
+        for (let i = 0; i < opens - closes; i++) repaired += ']';
+        for (let i = 0; i < openBraces - closeBraces; i++) repaired += '}';
+        return JSON.parse(repaired);
+      }
+    } catch(e2) {
+      console.error('[Extract] JSON repair failed:', e2.message);
+    }
+    throw new Error('Failed to parse extraction response. The PDF may be too complex — please fill in manually.');
+  }
 }
 
 function openManualForm() {
@@ -956,11 +1377,22 @@ function confirmCreatePO() {
     source: state.reviewSource,
     originalPdfB64:  state.reviewSource === 'pdf' ? state.reviewPdfB64  : null,
     originalPdfName: state.reviewSource === 'pdf' ? state.reviewPdfName : null,
+    originalPdfFile: state.reviewSource === 'pdf' ? `originals/${uid()}_original.pdf` : null,
   };
 
   state.pos.unshift(po);
   addEvent('created', po.id, state.currentUser.id, `PO ${po.poNumber||po.id} created via ${state.reviewSource==='pdf'?'PDF':'manual entry'} (${po.currency} ${po.total})`);
   saveState();
+
+  // Save original PDF to GitHub storage if available
+  if (po.originalPdfFile && state.reviewPdfB64 && ghConfigured()) {
+    ghSavePDF(state.reviewPdfB64, po.originalPdfFile)
+      .then(ok => {
+        if (ok) console.log('[GH] Original PDF saved:', po.originalPdfFile);
+        else console.warn('[GH] Failed to save original PDF to GitHub');
+      });
+  }
+
   state.reviewData=null; state.reviewItems=[]; state.reviewSource=null;
   state.reviewPdfB64=null; state.reviewPdfName=null;
   state.page='po-detail'; state.currentPO=po.id;
@@ -1000,7 +1432,7 @@ function viewPO(id) { state.page='po-detail'; state.currentPO=id; render(); }
 // ============================================================
 function renderPOList() {
   const u=state.currentUser, isAdmin=u.role==='admin';
-  const myPOs = isAdmin ? state.pos : state.pos.filter(p=>p.requestedBy===u.id);
+  const myPOs = isAdmin ? state.pos.filter(p=>p.status!=='deleted') : state.pos.filter(p=>p.requestedBy===u.id&&p.status!=='deleted');
   const div = document.createElement('div');
   div.innerHTML=`<div class="page-header"><h2>Purchase Orders</h2><p>${isAdmin?'All POs in the system':'Your submitted POs'}</p></div>`;
   const card=document.createElement('div'); card.className='card'; card.style.padding='0';
@@ -1013,6 +1445,7 @@ function renderPOList() {
 function renderPending() {
   const u=state.currentUser, isAdmin=u.role==='admin';
   const pending = state.pos.filter(p => {
+    if (p.status === 'deleted') return false;
     if (p.status !== 'pending') return false;
     if (isAdmin) return true;
     const groups = getApprovalGroups(p.company, p.approvalLevel);
@@ -1142,15 +1575,55 @@ function renderPODetail() {
           <div style="font-size:11px;color:var(--text2);margin-top:3px">By <strong>${esc(approver?.name||po.approvedBy)}</strong> on ${fmtDateTime(po.approvedAt)}</div>
         </div>
       </div>
-      ${po.approvedPdfB64 ? `<button class="btn btn-success btn-sm" id="dl-pdf-btn">⬇ Download Approved PDF</button>` : ''}
+      <div id="pdf-btn-wrap"></div>
     </div>`;
-    if (po.approvedPdfB64) {
-      stamp.querySelector('#dl-pdf-btn').onclick = () => {
-        const link = document.createElement('a');
-        link.href = 'data:application/pdf;base64,' + po.approvedPdfB64;
-        link.download = `PO_${(po.poNumber||po.id).replace(/[^a-zA-Z0-9]/g,'_')}_APPROVED.pdf`;
-        link.click();
+    if (po.approvedPdfB64 || po.approvedPdfFilename) {
+      const dlBtn = document.createElement('button');
+      dlBtn.className = 'btn btn-success btn-sm';
+      dlBtn.innerHTML = '⬇ Download Approved PDF';
+      dlBtn.onclick = async () => {
+        dlBtn.disabled = true;
+        dlBtn.textContent = 'Downloading…';
+        let downloaded = false;
+
+        // Try GitHub first
+        if (po.approvedPdfFilename && ghConfigured()) {
+          downloaded = await ghDownloadPDF(po.approvedPdfFilename);
+        }
+
+        // If not found in GitHub, regenerate the PDF and save it
+        if (!downloaded) {
+          dlBtn.textContent = 'Regenerating PDF…';
+          try {
+            const approver = state.users.find(u => u.id === po.approvedBy);
+            const approvedNames = (po.approvals||[]).map(l => state.users.find(u=>u.login===l)?.name||l).join(', ') || approver?.name || 'Unknown';
+            const newPdfB64 = await generateApprovedPDF(po, approvedNames, po.approvedAt);
+            if (newPdfB64) {
+              // Save to GitHub for future downloads
+              const filename = po.approvedPdfFilename || `PO_${(po.poNumber||po.id).replace(/[^a-zA-Z0-9]/g,'_')}_APPROVED.pdf`;
+              po.approvedPdfFilename = filename;
+              if (ghConfigured()) {
+                await ghSavePDF(newPdfB64, filename);
+                saveState();
+              }
+              // Download directly
+              const link = document.createElement('a');
+              link.href = 'data:application/pdf;base64,' + newPdfB64;
+              link.download = filename;
+              link.click();
+              toast('PDF regenerated and saved to GitHub ✓');
+              downloaded = true;
+            }
+          } catch(e) {
+            toast('Failed to regenerate PDF: ' + e.message, 'error');
+          }
+        }
+
+        dlBtn.disabled = false;
+        dlBtn.innerHTML = '⬇ Download Approved PDF';
       };
+      const wrap = stamp.querySelector('#pdf-btn-wrap');
+      if (wrap) wrap.appendChild(dlBtn);
     }
     div.appendChild(stamp);
   }
@@ -1163,6 +1636,28 @@ function renderPODetail() {
 
   // Action buttons
   const actDiv=document.createElement('div'); actDiv.style.marginBottom='24px';
+
+  // Admin-only controls — delete and edit
+  if (isAdmin) {
+    const adminBar = document.createElement('div');
+    adminBar.style.cssText='display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px;padding:12px 16px;background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius);border-left:3px solid var(--amber)';
+    adminBar.innerHTML=`<span style="font-size:9px;text-transform:uppercase;letter-spacing:0.1em;color:var(--amber);font-weight:700;align-self:center;margin-right:8px">Admin</span>`;
+
+    const editBtn = document.createElement('button');
+    editBtn.className='btn btn-outline btn-sm';
+    editBtn.innerHTML=`${svgIcon('settings')} Edit PO`;
+    editBtn.onclick=()=>{ state.modal={type:'editPO', po}; render(); };
+    adminBar.appendChild(editBtn);
+
+    const delBtn = document.createElement('button');
+    delBtn.className='btn btn-sm btn-danger';
+    delBtn.innerHTML=`${svgIcon('x')} Delete PO`;
+    delBtn.onclick=()=>{ state.modal={type:'deletePO', po}; render(); };
+    adminBar.appendChild(delBtn);
+
+    actDiv.appendChild(adminBar);
+  }
+
   if (po.status==='draft'&&isRequester) {
     // Notes field + request button
     const requestPanel = document.createElement('div');
@@ -1281,10 +1776,27 @@ Please log in to the PO Approval Tool to review and approve or reject this PO.
 async function generateApprovedPDF(po, approverName, approvedAt) {
   const { PDFDocument, rgb, degrees, StandardFonts, PageSizes } = PDFLib;
 
-  // Use original PDF if available, otherwise create a simple summary PDF
+  // Use original PDF if available in memory, otherwise try fetching from GitHub
   let pdfDoc;
-  if (po.originalPdfB64) {
-    const pdfBytes = Uint8Array.from(atob(po.originalPdfB64), c => c.charCodeAt(0));
+  let originalB64 = po.originalPdfB64;
+
+  if (!originalB64 && po.originalPdfFile && ghConfigured()) {
+    console.log('[PDF] Fetching original PDF from GitHub:', po.originalPdfFile);
+    try {
+      const result = await ghFetchFile(po.originalPdfFile);
+      if (result && result.raw) {
+        originalB64 = result.raw.replace(/\s/g, ''); // remove any whitespace/newlines
+        console.log('[PDF] Original PDF fetched from GitHub, size:', originalB64.length);
+      }
+    } catch(e) {
+      console.warn('[PDF] Could not fetch original PDF from GitHub:', e);
+    }
+  }
+
+  if (originalB64) {
+    const binaryStr = atob(originalB64);
+    const pdfBytes = new Uint8Array(binaryStr.length);
+    for (let i = 0; i < binaryStr.length; i++) pdfBytes[i] = binaryStr.charCodeAt(i);
     pdfDoc = await PDFDocument.load(pdfBytes, { ignoreEncryption: true });
   } else {
     // No original PDF — build a simple one-page summary
@@ -1416,21 +1928,45 @@ async function approvePO(po) {
 
     // Generate watermarked PDF
     try {
+      console.log('[PDF] Starting generation. originalPdfFile:', po.originalPdfFile, 'originalPdfB64 present:', !!po.originalPdfB64);
       po.approvedPdfB64 = await generateApprovedPDF(po, approvedNames, po.approvedAt);
+      console.log('[PDF] Generation complete, size:', po.approvedPdfB64?.length);
+      // Save PDF to GitHub storage
+      if (po.approvedPdfB64 && ghConfigured()) {
+        const pdfFilename = `PO_${(po.poNumber||po.id).replace(/[^a-zA-Z0-9]/g,'_')}_APPROVED.pdf`;
+        po.approvedPdfFilename = pdfFilename;
+        const saved = await ghSavePDF(po.approvedPdfB64, pdfFilename);
+        if (saved) {
+          console.log('[GH] PDF saved to GitHub:', pdfFilename);
+          toast('Approved PDF saved to GitHub storage ✓');
+        } else {
+          toast('Warning: PDF could not be saved to GitHub.', 'error', 5000);
+        }
+      }
     } catch(err) {
-      console.error('PDF generation failed:', err);
+      console.error('[PDF] Generation failed:', err.message, err.stack);
       po.approvedPdfB64 = null;
-      toast('Warning: PDF watermark generation failed.', 'error');
+      toast(`Warning: PDF watermark generation failed: ${err.message}`, 'error', 8000);
     }
 
     addEvent('approved', po.id, u.id, `PO fully approved. Approvers: ${approvedNames}`);
 
+    // Build recipient list: requester + all potential approvers for this company/level
     const req = state.users.find(x => x.id === po.requestedBy);
-    if (req) {
-      const msg =
-`Dear ${req.name},
+    const approverLogins = getApproverLogins(po.company, po.approvalLevel);
+    const allApprovers   = getUsersByLogins(approverLogins);
 
-Your Purchase Order has been APPROVED.
+    // Collect all unique recipients (requester + all approvers)
+    const recipients = [];
+    if (req) recipients.push(req);
+    allApprovers.forEach(a => { if (!recipients.find(r => r.id === a.id)) recipients.push(a); });
+
+    recipients.forEach(recipient => {
+      const isRequester = recipient.id === po.requestedBy;
+      const msg =
+`Dear ${recipient.name},
+
+Purchase Order ${po.poNumber||po.id} has been APPROVED.
 
 PO Number   : ${po.poNumber||po.id}
 Company     : ${po.company}
@@ -1440,16 +1976,13 @@ Amount      : ${fmtCurrency(po.total, po.currency)}
 
 Approved by : ${approvedNames}
 Approved on : ${fmtDateTime(po.approvedAt)}
-
-The approved PO with APPROVED watermark is ready for download.
-Please log in to the PO Approval Tool, open this PO and click
-"Download Approved PDF" to retrieve the stamped document.
-
+${isRequester ? `\nThe approved PO with APPROVED watermark is ready for download.\nPlease log in to the PO Approval Tool, open this PO and click\n"Download Approved PDF" to retrieve the stamped document.` : ''}
 — PO Approval Tool · OPTIMAL Group`;
-      sendEmail(req.email, `✅ PO Approved: ${po.poNumber||po.id}`, msg, po.id);
-    }
+      sendEmail(recipient.email, `✅ PO Approved: ${po.poNumber||po.id}`, msg, po.id);
+    });
+
     saveState();
-    toast('PO fully approved! Confirmation email sent.');
+    toast(`PO fully approved! Confirmation sent to ${recipients.length} recipient(s).`);
   } else {
     // Partial approval — notify remaining approvers in the same group
     const groups   = getApprovalGroups(po.company, po.approvalLevel);
@@ -1515,17 +2048,186 @@ Please review the PO and resubmit if applicable.
 // ARCHIVE
 // ============================================================
 function renderArchive() {
-  const div=document.createElement('div');
-  div.innerHTML=`<div class="page-header"><h2>Archive</h2><p>Complete log of all PO approval activities</p></div>`;
-  const card=document.createElement('div'); card.className='card'; card.style.padding='0 24px';
-  if (!state.archive.length) { card.innerHTML='<p style="padding:28px;text-align:center;color:var(--text3)">No archive entries yet.</p>'; div.appendChild(card); return div; }
-  const tl=document.createElement('div'); tl.className='timeline';
-  state.archive.forEach(ev=>{
-    const item=buildTimelineItem(ev);
-    if (ev.poId) { item.style.cursor='pointer'; item.onclick=()=>viewPO(ev.poId); }
-    tl.appendChild(item);
+  const div = document.createElement('div');
+  div.innerHTML = `<div class="page-header"><h2>Archive</h2><p>Complete log of all PO activities — click a row to expand details</p></div>`;
+
+  if (!state.archive.length) {
+    div.innerHTML += `<div class="card" style="text-align:center;padding:48px;color:var(--text3)">No archive entries yet.</div>`;
+    return div;
+  }
+
+  // ── Filters ──────────────────────────────────────────────
+  // Group companies by normalised name to avoid duplicates like "LDA.", "LDA", etc.
+  const companyMap = {};
+  state.pos.forEach(p => {
+    if (!p.company) return;
+    const norm = normaliseCompany(p.company);
+    if (!companyMap[norm]) companyMap[norm] = norm; // use normalised as display name
   });
-  card.appendChild(tl); div.appendChild(card); return div;
+  const companies = Object.keys(companyMap).sort();
+
+  const filterCard = document.createElement('div'); filterCard.className='card'; filterCard.style.marginBottom='16px';
+  filterCard.innerHTML=`
+    <div style="display:flex;gap:14px;align-items:flex-end;flex-wrap:wrap">
+      <div class="form-group" style="margin:0;min-width:200px">
+        <label>Filter by Company</label>
+        <select id="arc-company">
+          <option value="all">All companies</option>
+          ${companies.map(c=>`<option value="${esc(c)}">${esc(c)}</option>`).join('')}
+        </select>
+      </div>
+      <div class="form-group" style="margin:0;min-width:150px">
+        <label>Filter by Status</label>
+        <select id="arc-status">
+          <option value="all">All statuses</option>
+          <option value="approved">Approved</option>
+          <option value="pending">Pending</option>
+          <option value="rejected">Rejected</option>
+          <option value="deleted">Deleted</option>
+          <option value="draft">Draft</option>
+        </select>
+      </div>
+      <div class="form-group" style="margin:0;flex:1;min-width:180px">
+        <label>Search</label>
+        <input id="arc-search" placeholder="PO number, supplier, project…">
+      </div>
+    </div>`;
+  div.appendChild(filterCard);
+
+  // ── PO list container ─────────────────────────────────────
+  const listEl = document.createElement('div'); listEl.id='arc-list';
+  div.appendChild(listEl);
+
+  function renderList() {
+    const company = document.getElementById('arc-company')?.value || 'all';
+    const status  = document.getElementById('arc-status')?.value  || 'all';
+    const search  = (document.getElementById('arc-search')?.value || '').toLowerCase().trim();
+
+    // Group archive events by PO
+    const poMap = {};
+    state.archive.forEach(ev => {
+      if (!ev.poId) return;
+      if (!poMap[ev.poId]) poMap[ev.poId] = [];
+      poMap[ev.poId].push(ev);
+    });
+
+    // Build PO rows — sorted by most recent event first
+    let rows = Object.entries(poMap).map(([poId, events]) => {
+      const po = state.pos.find(p=>p.id===poId);
+      const latest = events[0];
+      return { poId, po, events, latest };
+    }).sort((a,b) => new Date(b.latest.ts) - new Date(a.latest.ts));
+
+    // Apply filters
+    if (company !== 'all') rows = rows.filter(r => normaliseCompany(r.po?.company||'') === company);
+    if (status  !== 'all') rows = rows.filter(r => r.po?.status === status);
+    if (search) rows = rows.filter(r => {
+      const po = r.po;
+      return (po?.poNumber||'').toLowerCase().includes(search) ||
+             (po?.supplier||'').toLowerCase().includes(search) ||
+             (po?.project||'').toLowerCase().includes(search) ||
+             (po?.company||'').toLowerCase().includes(search) ||
+             r.poId.toLowerCase().includes(search);
+    });
+
+    listEl.innerHTML = '';
+
+    if (!rows.length) {
+      listEl.innerHTML = `<div class="card" style="text-align:center;padding:32px;color:var(--text3)">No matching records found.</div>`;
+      return;
+    }
+
+    const statusColors = { approved:'var(--green)', pending:'var(--amber)', rejected:'var(--red)', deleted:'var(--text3)', draft:'var(--blue)' };
+    const statusBg     = { approved:'var(--green-dim)', pending:'var(--amber-dim)', rejected:'var(--red-dim)', deleted:'var(--surface3)', draft:'var(--blue-dim)' };
+
+    rows.forEach(({ poId, po, events }) => {
+      const status = po?.status || 'unknown';
+      const row = document.createElement('div');
+      row.style.cssText='background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);margin-bottom:8px;overflow:hidden;transition:border-color 0.15s';
+
+      // ── Summary row (always visible) ──────────────────────
+      const summary = document.createElement('div');
+      summary.style.cssText='display:flex;align-items:center;gap:12px;padding:12px 16px;cursor:pointer;user-select:none';
+      summary.innerHTML=`
+        <div style="width:8px;height:8px;border-radius:50%;background:${statusColors[status]||'var(--text3)'};flex-shrink:0"></div>
+        <div style="flex:1;min-width:0">
+          <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+            <span style="font-weight:700;font-size:12px;color:var(--text)">${esc(po?.poNumber||poId)}</span>
+            <span style="font-size:11px;color:var(--text2)">${esc(po?.supplier||'—')}</span>
+            ${po?.project?`<span style="font-size:10px;color:var(--text3)">· ${esc(po.project)}</span>`:''}
+          </div>
+          <div style="font-size:10px;color:var(--text3);margin-top:2px">${esc(po?.company||'—')}</div>
+        </div>
+        <div style="text-align:right;flex-shrink:0">
+          <div style="font-weight:700;font-size:12px;color:var(--cyan)">${po?fmtCurrency(po.total,po.currency):'—'}</div>
+          <div style="font-size:10px;color:var(--text3);margin-top:2px">${fmtDate(events[0]?.ts)}</div>
+        </div>
+        <div style="flex-shrink:0">
+          <span style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;padding:3px 8px;border-radius:3px;background:${statusBg[status]||'var(--surface3)'};color:${statusColors[status]||'var(--text3)'}">${status}</span>
+        </div>
+        <div style="flex-shrink:0;font-size:14px;color:var(--text3);transition:transform 0.2s" class="arc-chevron">▸</div>`;
+
+      // ── Detail panel (hidden by default) ─────────────────
+      const detail = document.createElement('div');
+      detail.style.cssText='display:none;border-top:1px solid var(--border);background:var(--surface2)';
+
+      // PO info + View button
+      if (po) {
+        const infoBar = document.createElement('div');
+        infoBar.style.cssText='display:flex;justify-content:space-between;align-items:center;padding:10px 16px;flex-wrap:wrap;gap:8px;border-bottom:1px solid var(--border)';
+        infoBar.innerHTML=`
+          <div style="display:flex;gap:20px;flex-wrap:wrap;font-size:11px">
+            <span><span style="color:var(--text3)">Company:</span> <strong>${esc(po.company||'—')}</strong></span>
+            <span><span style="color:var(--text3)">Supplier:</span> <strong>${esc(po.supplier||'—')}</strong></span>
+            <span><span style="color:var(--text3)">Level:</span> <strong>L${po.approvalLevel||'—'}</strong></span>
+            <span><span style="color:var(--text3)">Payment:</span> <strong>${esc(po.paymentTerms||'—')}</strong></span>
+            ${po.approvedAt?`<span><span style="color:var(--text3)">Approved:</span> <strong>${fmtDate(po.approvedAt)}</strong></span>`:''}
+          </div>
+          <button class="btn btn-outline btn-sm" onclick="viewPO('${poId}')">View PO →</button>`;
+        detail.appendChild(infoBar);
+      }
+
+      // Timeline of events
+      const tl = document.createElement('div');
+      tl.style.cssText='padding:12px 16px;display:flex;flex-direction:column;gap:6px';
+      events.forEach(ev => {
+        const evRow = document.createElement('div');
+        evRow.style.cssText='display:flex;gap:10px;align-items:flex-start;font-size:11px';
+        const icons = { created:'📄', requested:'📤', approved:'✅', rejected:'❌', email:'📧', deleted:'🗑️', edited:'✏️', approval_part:'👍' };
+        evRow.innerHTML=`
+          <span style="flex-shrink:0;width:20px;text-align:center">${icons[ev.type]||'•'}</span>
+          <span style="color:var(--text3);flex-shrink:0;min-width:130px">${fmtDateTime(ev.ts)}</span>
+          <span style="color:var(--text2);font-weight:600;flex-shrink:0;min-width:90px">${esc(ev.userName||ev.type)}</span>
+          <span style="color:var(--text2)">${ev.type==='email'?`📧 → ${esc(ev.to)}: ${esc(ev.subject||'')}`:esc(ev.message||ev.type)}</span>`;
+        tl.appendChild(evRow);
+      });
+      detail.appendChild(tl);
+
+      // Toggle expand/collapse
+      let expanded = false;
+      summary.onclick = () => {
+        expanded = !expanded;
+        detail.style.display = expanded ? 'block' : 'none';
+        row.style.borderColor = expanded ? 'var(--cyan-border)' : 'var(--border)';
+        summary.querySelector('.arc-chevron').style.transform = expanded ? 'rotate(90deg)' : '';
+      };
+
+      row.appendChild(summary);
+      row.appendChild(detail);
+      listEl.appendChild(row);
+    });
+  }
+
+  // Attach filter listeners after DOM insertion
+  setTimeout(() => {
+    ['arc-company','arc-status'].forEach(id => {
+      document.getElementById(id)?.addEventListener('change', renderList);
+    });
+    document.getElementById('arc-search')?.addEventListener('input', renderList);
+    renderList();
+  }, 0);
+
+  return div;
 }
 
 function buildTimelineItem(ev) {
@@ -1572,14 +2274,32 @@ function renderUsers() {
       </div>
     </div>
     <button class="btn btn-primary btn-sm" id="nu-submit">Add User</button>`;
-  addCard.querySelector('#nu-submit').onclick=()=>{
+  addCard.querySelector('#nu-submit').onclick = async () => {
     const g=id=>addCard.querySelector(id)?.value?.trim()||'';
     const name=g('#nu-name'),login=g('#nu-login'),pass=g('#nu-pass'),email=g('#nu-email'),role=g('#nu-role');
     const levels=[1,2,3].filter(l=>addCard.querySelector(`#nu-l${l}`)?.checked);
     if (!name||!login||!pass||!email){toast('All fields are required.','error');return;}
     if (state.users.find(u=>u.login===login)){toast('Login already exists.','error');return;}
+
     state.users.push({id:'u'+uid(),login,pass,name,email,role,levels});
-    saveState(); toast(`User ${name} added.`); render();
+
+    // Save locally first
+    try {
+      const posClean = state.pos.map(po => { const {approvedPdfB64, originalPdfB64, ...rest} = po; return rest; });
+      localStorage.setItem('po_tool_optimal', JSON.stringify({
+        users: state.users, pos: posClean, archive: state.archive, _ghSha: state._ghSha
+      }));
+    } catch(e) {}
+
+    // Await GitHub push
+    if (ghConfigured()) {
+      const ok = await ghPush();
+      if (ok) toast(`User ${name} added and saved to GitHub ✓`);
+      else toast(`User ${name} added locally — GitHub sync failed (${state._ghError||'unknown'})`, 'error', 6000);
+    } else {
+      toast(`User ${name} added.`);
+    }
+    render();
   };
   div.appendChild(addCard);
 
@@ -1589,17 +2309,30 @@ function renderUsers() {
   const txC=['#185FA5','#3B6D11','#854F0B','#A32D2D','#0F6E56'];
   state.users.forEach(u=>{
     const row=document.createElement('div'); row.className='user-row';
+    row.style.cssText='flex-direction:column;align-items:stretch;gap:10px;padding:16px 0';
     const ini=u.name.split(' ').map(w=>w[0]).join('').slice(0,2).toUpperCase();
     const ci=u.id.charCodeAt(0)%bgC.length;
     row.innerHTML=`
-      <div class="user-avatar" style="background:${bgC[ci]};color:${txC[ci]}">${ini}</div>
-      <div class="user-info">
-        <div class="uname">${esc(u.name)} ${u.role==='admin'?'<span class="badge badge-blue" style="font-size:10px;margin-left:4px">Admin</span>':''}</div>
-        <div class="uemail">${esc(u.email)} · <span style="font-family:monospace">@${esc(u.login)}</span></div>
+      <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+        <div class="user-avatar" style="background:${bgC[ci]};color:${txC[ci]};flex-shrink:0">${ini}</div>
+        <div class="user-info" style="flex:1;min-width:160px">
+          <div class="uname">${esc(u.name)} ${u.role==='admin'?'<span class="badge badge-blue" style="font-size:10px;margin-left:4px">Admin</span>':''}</div>
+          <div class="uemail" style="margin-top:2px">${esc(u.email)} · <span style="font-family:monospace">@${esc(u.login)}</span></div>
+        </div>
+        <div style="display:flex;gap:5px;flex-wrap:wrap">
+          ${(u.levels||[]).map(l=>`<span class="badge badge-gray">L${l}</span>`).join('')}
+          ${!u.levels?.length&&u.role!=='admin'?'<span style="font-size:11px;color:var(--text3)">No approval</span>':''}
+        </div>
       </div>
-      <div style="display:flex;gap:5px;flex-wrap:wrap">
-        ${(u.levels||[]).map(l=>`<span class="badge badge-gray">L${l}</span>`).join('')}
-        ${!u.levels?.length&&u.role!=='admin'?'<span style="font-size:11px;color:var(--text3)">No approval</span>':''}
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+        <div class="form-group" style="margin:0">
+          <label>Login</label>
+          <input id="login-${u.id}" type="text" value="${esc(u.login)}" placeholder="username" ${u.login==='admin'?'disabled':''}>
+        </div>
+        <div class="form-group" style="margin:0">
+          <label>Email</label>
+          <input id="email-${u.id}" type="email" value="${esc(u.email)}" placeholder="user@company.com">
+        </div>
       </div>
       <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
         <select id="lvl-${u.id}" style="font-size:12px;padding:6px 10px;width:auto">
@@ -1611,22 +2344,87 @@ function renderUsers() {
           <option value="2,3"   ${u.levels?.join(',')===('2,3')  ?'selected':''}>L2 + L3</option>
           <option value="3"     ${u.levels?.join(',')===('3')    ?'selected':''}>L3 only</option>
         </select>
-        <button class="btn btn-outline btn-sm" onclick="saveUserLevels('${u.id}')">Save</button>
+        <button class="btn btn-outline btn-sm" onclick="saveUserDetails('${u.id}')">Save</button>
         ${u.login!=='admin'?`<button class="btn btn-sm" style="background:var(--red-bg);color:var(--red);border:1px solid var(--red-light)" onclick="removeUser('${u.id}','${esc(u.name)}')">Remove</button>`:''}
       </div>`;
     listCard.appendChild(row);
   });
   div.appendChild(listCard); return div;
 }
-function saveUserLevels(uid) {
-  const sel=document.getElementById('lvl-'+uid); if(!sel)return;
-  const u=state.users.find(x=>x.id===uid); if(!u)return;
-  u.levels=sel.value?sel.value.split(',').map(Number):[];
-  saveState(); toast(`${u.name}'s levels updated.`); render();
+async function saveUserDetails(uid) {
+  const u = state.users.find(x => x.id === uid); if (!u) return;
+  const newLogin = document.getElementById('login-'+uid)?.value.trim();
+  const newEmail = document.getElementById('email-'+uid)?.value.trim();
+  const sel      = document.getElementById('lvl-'+uid);
+
+  if (!newEmail) { toast('Email cannot be empty.', 'error'); return; }
+  if (!newLogin && u.login !== 'admin') { toast('Login cannot be empty.', 'error'); return; }
+
+  if (newLogin && newLogin !== u.login && state.users.find(x => x.login === newLogin && x.id !== uid)) {
+    toast(`Login "${newLogin}" is already taken.`, 'error'); return;
+  }
+
+  if (newLogin && u.login !== 'admin') u.login = newLogin;
+  u.email  = newEmail;
+  if (sel) u.levels = sel.value ? sel.value.split(',').map(Number) : [];
+
+  if (state.currentUser?.id === uid) {
+    state.currentUser.login = u.login;
+    state.currentUser.email = u.email;
+  }
+
+  // Save locally first
+  try {
+    const posClean = state.pos.map(po => { const {approvedPdfB64, originalPdfB64, ...rest} = po; return rest; });
+    localStorage.setItem('po_tool_optimal', JSON.stringify({
+      users: state.users, pos: posClean, archive: state.archive, _ghSha: state._ghSha
+    }));
+  } catch(e) {}
+
+  // Push to GitHub and await result
+  if (ghConfigured()) {
+    const ok = await ghPush();
+    if (ok) toast(`${u.name} saved ✓ (email: ${u.email})`);
+    else toast(`${u.name} saved locally — GitHub sync failed (${state._ghError||'unknown'})`, 'error', 8000);
+  } else {
+    toast(`${u.name} updated (email: ${u.email}).`);
+  }
+  render();
 }
-function removeUser(uid,name) {
+
+async function removeUser(uid, name) {
   if (!confirm(`Remove user "${name}"?`)) return;
-  state.users=state.users.filter(u=>u.id!==uid); saveState(); toast(`${name} removed.`); render();
+  state.users = state.users.filter(u => u.id !== uid);
+
+  // Save locally
+  try {
+    const posClean = state.pos.map(po => { const {approvedPdfB64, originalPdfB64, ...rest} = po; return rest; });
+    localStorage.setItem('po_tool_optimal', JSON.stringify({
+      users: state.users, pos: posClean, archive: state.archive, _ghSha: state._ghSha
+    }));
+  } catch(e) {}
+
+  // Force push directly — bypass ghPush to avoid any migration adding user back
+  if (ghConfigured()) {
+    const fetched = await ghFetch();
+    if (fetched !== null) {
+      state._ghSha = fetched.sha;
+      // Build clean data explicitly without the removed user
+      const cleanData = {
+        users:   state.users, // already filtered above
+        pos:     state.pos,
+        archive: state.archive,
+      };
+      const ok = await ghWrite(cleanData, state._ghSha);
+      if (ok) toast(`${name} removed and saved to GitHub ✓`);
+      else toast(`${name} removed locally — GitHub sync failed (${state._ghError||'unknown'})`, 'error', 8000);
+    } else {
+      toast(`${name} removed locally — could not reach GitHub`, 'error', 6000);
+    }
+  } else {
+    toast(`${name} removed.`);
+  }
+  render();
 }
 
 // ============================================================
@@ -1718,7 +2516,8 @@ function renderParameters() {
             plus.textContent='+';
             groupDiv.appendChild(plus);
           }
-          const usr=state.users.find(u=>u.login===login);
+          // Use INITIAL_USERS for display names to avoid encoding corruption from GitHub
+          const usr = INITIAL_USERS.find(u=>u.login===login) || state.users.find(u=>u.login===login);
           const chip=document.createElement('span');
           chip.className='approver-chip';
           chip.style.cssText=group.length>1?'border-color:var(--cyan-border);color:var(--cyan)':'';
@@ -1736,6 +2535,52 @@ function renderParameters() {
   tbl.appendChild(tbody); tableWrap.appendChild(tbl); matCard.appendChild(tableWrap);
   div.appendChild(matCard);
   return div;
+}
+
+// ============================================================
+// MODAL
+// ============================================================
+function adminDeletePO(po, reason) {
+  const u = state.currentUser;
+  // Record deletion in archive BEFORE removing
+  addEvent('deleted', po.id, u.id,
+    `PO ${po.poNumber||po.id} DELETED by ${u.name}. Reason: ${reason}. ` +
+    `Was: ${po.status} | ${po.company} | ${po.supplier} | ${fmtCurrency(po.total,po.currency)}`
+  );
+  // Mark as deleted (keep in archive) rather than fully removing
+  po.status   = 'deleted';
+  po.deletedBy = u.id;
+  po.deletedAt = new Date().toISOString();
+  po.deleteReason = reason;
+  state.modal = null;
+  saveState();
+  toast(`PO ${po.poNumber||po.id} deleted. Audit record kept.`);
+  state.page = 'pos';
+  render();
+}
+
+function adminEditPO(po, changes, reason) {
+  const u = state.currentUser;
+  if (!Object.keys(changes).length) { toast('No changes detected.','error'); return; }
+
+  // Record what changed in audit trail
+  const changeDesc = Object.entries(changes)
+    .map(([k,v]) => `${k}: "${po[k]||''}" → "${v}"`)
+    .join(', ');
+  addEvent('edited', po.id, u.id,
+    `PO edited by ${u.name}. Reason: ${reason}. Changes: ${changeDesc}`
+  );
+
+  // Apply changes
+  Object.assign(po, changes);
+  // Recalculate approval level if total changed
+  if (changes.total !== undefined) {
+    po.approvalLevel = getLevel(po.total);
+  }
+  state.modal = null;
+  saveState();
+  toast(`PO updated. Changes recorded in audit trail.`);
+  render();
 }
 
 // ============================================================
@@ -1763,6 +2608,79 @@ function renderModal() {
     };
     ov.appendChild(box);
   }
+
+  if (m.type==='deletePO') {
+    const po=m.po;
+    const box=document.createElement('div'); box.className='modal';
+    box.innerHTML=`
+      <h3>Delete PO</h3>
+      <div class="modal-desc">You are permanently deleting <strong>${esc(po.poNumber||po.id)}</strong> (${esc(po.supplier)} — ${fmtCurrency(po.total,po.currency)}).<br><br>
+        A record of this deletion will be kept in the archive for audit purposes.</div>
+      <div class="form-group"><label>Reason for deletion <span style="color:var(--red)">*</span></label>
+        <textarea id="del-reason" rows="3" placeholder="e.g. Duplicate entry, wrong supplier, entered in error…"></textarea>
+      </div>
+      <div class="modal-actions">
+        <button class="btn btn-outline" onclick="state.modal=null;render()">Cancel</button>
+        <button class="btn btn-danger" id="confirm-del">${svgIcon('x')} Delete PO</button>
+      </div>`;
+    box.querySelector('#confirm-del').onclick=()=>{
+      const reason=box.querySelector('#del-reason').value.trim();
+      if (!reason){toast('Please provide a reason for deletion.','error');return;}
+      adminDeletePO(po, reason);
+    };
+    ov.appendChild(box);
+  }
+
+  if (m.type==='editPO') {
+    const po=m.po;
+    const box=document.createElement('div'); box.className='modal';
+    box.style.maxWidth='560px';
+    box.innerHTML=`
+      <h3>Edit PO</h3>
+      <div class="modal-desc">Editing <strong>${esc(po.poNumber||po.id)}</strong>. Changes are logged in the audit trail.</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">
+        <div class="form-group" style="margin:0"><label>PO Number</label><input id="ep-ponum" value="${esc(po.poNumber||'')}"></div>
+        <div class="form-group" style="margin:0"><label>Company</label>
+          <select id="ep-company">
+            ${COMPANIES.map(c=>`<option ${normaliseCompany(c)===normaliseCompany(po.company)?'selected':''}>${c}</option>`).join('')}
+          </select>
+        </div>
+        <div class="form-group" style="margin:0"><label>Supplier</label><input id="ep-supplier" value="${esc(po.supplier||'')}"></div>
+        <div class="form-group" style="margin:0"><label>Project</label><input id="ep-project" value="${esc(po.project||'')}"></div>
+        <div class="form-group" style="margin:0"><label>Net Total (€)</label><input id="ep-net" type="number" step="0.01" value="${po.netTotal||0}"></div>
+        <div class="form-group" style="margin:0"><label>Total incl. VAT (€)</label><input id="ep-total" type="number" step="0.01" value="${po.total||0}"></div>
+        <div class="form-group" style="margin:0"><label>Payment Terms</label><input id="ep-pay" value="${esc(po.paymentTerms||'')}"></div>
+        <div class="form-group" style="margin:0"><label>Currency</label>
+          <select id="ep-currency">
+            ${['EUR','USD','GBP','CHF'].map(c=>`<option ${po.currency===c?'selected':''}>${c}</option>`).join('')}
+          </select>
+        </div>
+      </div>
+      <div class="form-group"><label>Reason for edit <span style="color:var(--amber)">*</span></label>
+        <textarea id="ep-reason" rows="2" placeholder="Briefly describe what was corrected and why…"></textarea>
+      </div>
+      <div class="modal-actions">
+        <button class="btn btn-outline" onclick="state.modal=null;render()">Cancel</button>
+        <button class="btn btn-primary" id="confirm-edit">${svgIcon('check')} Save Changes</button>
+      </div>`;
+    box.querySelector('#confirm-edit').onclick=()=>{
+      const reason=box.querySelector('#ep-reason').value.trim();
+      if (!reason){toast('Please provide a reason for the edit.','error');return;}
+      const changes={};
+      const fields={poNumber:'#ep-ponum',company:'#ep-company',supplier:'#ep-supplier',project:'#ep-project',paymentTerms:'#ep-pay',currency:'#ep-currency'};
+      Object.entries(fields).forEach(([k,sel])=>{
+        const v=box.querySelector(sel)?.value?.trim();
+        if (v!==undefined && v!==(po[k]||'').toString()) changes[k]=v;
+      });
+      const net=parseFloat(box.querySelector('#ep-net').value)||0;
+      const tot=parseFloat(box.querySelector('#ep-total').value)||0;
+      if (net!==po.netTotal) changes.netTotal=net;
+      if (tot!==po.total)    changes.total=tot;
+      adminEditPO(po, changes, reason);
+    };
+    ov.appendChild(box);
+  }
+
   return ov;
 }
 
@@ -1776,51 +2694,157 @@ function renderApiSettings() {
   // ── EmailJS test card ──────────────────────────────────────
   const ejCard = document.createElement('div'); ejCard.className = 'card'; ejCard.style.marginBottom = '20px';
   ejCard.innerHTML = `
-    <div style="font-size:12px;font-weight:700;margin-bottom:12px;color:var(--cyan);text-transform:uppercase;letter-spacing:0.06em">EmailJS Connection Test</div>
-    <p style="font-size:11px;color:var(--text2);margin-bottom:14px;line-height:1.7">Use these buttons to diagnose email delivery issues.</p>
+    <div style="font-size:12px;font-weight:700;margin-bottom:12px;color:var(--cyan);text-transform:uppercase;letter-spacing:0.06em">Email Status (Cloudflare Worker + Brevo)</div>
+    <p style="font-size:11px;color:var(--text2);margin-bottom:14px;line-height:1.7">
+      Emails are sent via a <strong>Cloudflare Worker</strong> proxy to <strong>Brevo SMTP</strong>.<br>
+      Worker URL: <code style="font-size:10px;color:var(--cyan)">${EMAIL_WORKER_URL}</code>
+    </p>
+    <div style="margin-bottom:14px">
+      ${state.emailJSReachable === true
+        ? '<div class="alert alert-success">✓ Cloudflare Worker is reachable — emails should work.</div>'
+        : state.emailJSReachable === false
+          ? '<div class="alert alert-error">✗ Cloudflare Worker is NOT reachable — check your Worker is deployed.</div>'
+          : '<div class="alert alert-info">Email connectivity not yet tested — log out and back in to test.</div>'}
+    </div>
     <div style="display:flex;gap:10px;flex-wrap:wrap">
-      <button class="btn btn-outline btn-sm" id="test-reach-btn">🔌 Test Network Reach</button>
-      <button class="btn btn-outline btn-sm" id="test-send-btn">📧 Send Test Email</button>
+      <button class="btn btn-outline btn-sm" id="test-reach-btn">🔌 Re-test Connection</button>
+      <button class="btn btn-outline btn-sm" id="test-send-btn">📧 Send Test Email to Admin</button>
     </div>
     <div id="ej-result" style="margin-top:14px"></div>`;
 
   ejCard.querySelector('#test-reach-btn').onclick = async () => {
     const res = document.getElementById('ej-result');
-    res.innerHTML = '<div class="alert alert-info">Testing connection to api.emailjs.com…</div>';
+    res.innerHTML = '<div class="alert alert-info">Testing Cloudflare Worker…</div>';
     try {
-      // Send intentionally invalid payload — any HTTP response means server is reachable
-      const r = await fetch('https://api.emailjs.com/api/v1.0/email/send', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ service_id:'x', template_id:'x', user_id:'x', template_params:{} }),
-      });
-      res.innerHTML = `<div class="alert alert-success">✓ EmailJS server is reachable (HTTP ${r.status} — ${await r.text()}). Network is not the issue — check your EmailJS account configuration.</div>`;
+      const r = await fetch(EMAIL_WORKER_URL, { method: 'OPTIONS' });
+      state.emailJSReachable = true;
+      res.innerHTML = `<div class="alert alert-success">✓ Cloudflare Worker is reachable (HTTP ${r.status}) — emails should work.</div>`;
     } catch(err) {
-      res.innerHTML = `<div class="alert alert-error">✗ Cannot reach api.emailjs.com: <strong>${err.message}</strong><br><br>
-        Your browser or server is blocking outbound requests to EmailJS.<br>
-        Try opening <a href="https://api.emailjs.com" target="_blank" style="color:var(--red-light)">https://api.emailjs.com</a> directly to confirm.<br>
-        If that also fails, contact your hosting provider about outbound HTTPS restrictions.
-      </div>`;
+      state.emailJSReachable = false;
+      res.innerHTML = `<div class="alert alert-error">✗ Cannot reach Worker: <strong>${err.message}</strong></div>`;
     }
   };
 
   ejCard.querySelector('#test-send-btn').onclick = async () => {
     const res = document.getElementById('ej-result');
-    res.innerHTML = '<div class="alert alert-info">Sending test email to POApproval@optimal.pt…</div>';
+    res.innerHTML = '<div class="alert alert-info">Sending test email via Cloudflare Worker…</div>';
     try {
-      const r = await emailjs.send(EMAILJS_SERVICE_ID, EMAILJS_TEMPLATE_ID, {
-        to_email: 'POApproval@optimal.pt',
-        subject:  'PO Approval Tool — Connection Test',
-        message:  `This is a test email.\n\nSent by: ${state.currentUser?.name||'unknown'}\nTime: ${new Date().toLocaleString('en-GB')}`,
+      const r = await fetch(EMAIL_WORKER_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          to: 'poapproval.optimal@gmail.com',
+          subject: 'PO Approval Tool — Email Test',
+          message: `Test email sent at ${new Date().toLocaleString('en-GB')} by ${state.currentUser?.name||'admin'}.\n\nIf you received this, email delivery is working correctly.`,
+        }),
       });
-      res.innerHTML = `<div class="alert alert-success">✓ Test email sent successfully! Check POApproval@optimal.pt inbox. (Status: ${r.status} ${r.text})</div>`;
+      const json = await r.json().catch(() => ({}));
+      if (r.ok && json.success) {
+        res.innerHTML = `<div class="alert alert-success">✓ Email sent successfully! Check poapproval.optimal@gmail.com inbox.<br><small>Brevo status: ${json.brevoStatus}</small></div>`;
+      } else {
+        res.innerHTML = `<div class="alert alert-error">✗ Failed (HTTP ${r.status})<br><br>
+          <strong>Brevo status:</strong> ${json.brevoStatus||'unknown'}<br>
+          <strong>Brevo response:</strong> <code style="font-size:10px;word-break:break-all">${json.brevoResult||JSON.stringify(json)}</code>
+        </div>`;
+      }
     } catch(err) {
-      const detail = err?.text || err?.message || JSON.stringify(err);
-      res.innerHTML = `<div class="alert alert-error">✗ Send failed: <strong>${detail}</strong></div>`;
+      res.innerHTML = `<div class="alert alert-error">✗ Network error: <strong>${err.message}</strong></div>`;
     }
   };
 
   div.appendChild(ejCard);
+
+  // ── GitHub Storage config card ─────────────────────────────
+  const ghCard = document.createElement('div'); ghCard.className = 'card'; ghCard.style.marginBottom = '20px';
+  const ghCfg = getGHConfig();
+  const ghOk  = ghConfigured();
+  ghCard.innerHTML = `
+    <div style="font-size:12px;font-weight:700;margin-bottom:12px;color:var(--cyan);text-transform:uppercase;letter-spacing:0.06em">GitHub Shared Storage</div>
+    <p style="font-size:11px;color:var(--text2);margin-bottom:12px;line-height:1.7">
+      Data is stored in <strong style="color:var(--cyan)">optimaladmin/po-data</strong> (private repo).
+      Owner, repo and branch are pre-configured — you only need to enter your Personal Access Token (PAT).
+      Once set on one computer, the PAT is automatically shared to all other computers on next login.
+    </p>
+    ${ghOk
+      ? '<div class="alert alert-success" style="margin-bottom:14px">✓ GitHub storage is active — syncing to optimaladmin/po-data</div>'
+      : '<div class="alert alert-warning" style="margin-bottom:14px">⚠ PAT not set — enter your token below to enable shared storage.</div>'}
+    <div style="margin-bottom:14px">
+      <div class="form-group" style="margin:0;max-width:500px">
+        <label>Personal Access Token (PAT)</label>
+        <input type="password" id="gh-token" placeholder="ghp_xxxxxxxxxxxx" value="${esc(ghCfg.token)}">
+      </div>
+    </div>
+    <p style="font-size:10px;color:var(--text3);margin-bottom:14px;line-height:1.6">
+      Create a PAT at <a href="https://github.com/settings/tokens" target="_blank" style="color:var(--cyan)">github.com/settings/tokens</a>
+      → Generate new token (classic) → tick <strong>repo</strong> scope.
+    </p>
+    <div style="display:flex;gap:8px;flex-wrap:wrap">
+      <button class="btn btn-primary btn-sm" id="gh-save-btn">Save & Test Connection</button>
+      ${ghOk?'<button class="btn btn-outline btn-sm" id="gh-push-btn">⬆ Push Local Data to GitHub</button>':''}
+      ${ghOk?'<button class="btn btn-outline btn-sm" id="gh-pull-btn">⬇ Pull Latest from GitHub</button>':''}
+      ${ghOk?'<button class="btn btn-outline btn-sm" id="gh-clear-btn" style="color:var(--red);border-color:var(--red-border)">✕ Clear Token</button>':''}
+    </div>
+    <div id="gh-result" style="margin-top:14px"></div>`;
+
+  ghCard.querySelector('#gh-save-btn').onclick = async () => {
+    const token = ghCard.querySelector('#gh-token').value.trim();
+    const res   = document.getElementById('gh-result');
+    if (!token) { res.innerHTML='<div class="alert alert-error">Please enter your PAT token.</div>'; return; }
+    if (!token.startsWith('ghp_') && !token.startsWith('github_pat_')) {
+      res.innerHTML='<div class="alert alert-error">This does not look like a valid PAT (should start with ghp_ or github_pat_).</div>'; return;
+    }
+    saveGHConfig(token);
+    res.innerHTML='<div class="alert alert-info">Testing connection to optimaladmin/po-data…</div>';
+    try {
+      const r = await fetch(`https://api.github.com/repos/${GH_OWNER}/${GH_REPO}`, {
+        headers: { 'Authorization': `token ${token}`, 'Accept': 'application/vnd.github.v3+json' }
+      });
+      if (r.ok) {
+        res.innerHTML='<div class="alert alert-success">✓ Connected! Pushing current data to GitHub…</div>';
+        await ghPush();
+        res.innerHTML='<div class="alert alert-success">✓ Connected and data pushed to GitHub. All users will now share the same data automatically.</div>';
+        toast('GitHub storage configured!'); render();
+      } else {
+        const t = await r.text();
+        res.innerHTML=`<div class="alert alert-error">✗ Connection failed (${r.status}): ${t}</div>`;
+      }
+    } catch(e) {
+      res.innerHTML=`<div class="alert alert-error">✗ Network error: ${e.message}</div>`;
+    }
+  };
+
+  if (ghOk) {
+    ghCard.querySelector('#gh-push-btn').onclick = async () => {
+      const res = document.getElementById('gh-result');
+      res.innerHTML='<div class="alert alert-info">Pushing data to GitHub…</div>';
+      const fetched = await ghFetch();
+      if (fetched === null) {
+        res.innerHTML=`<div class="alert alert-error">✗ Cannot reach GitHub — check your token.<br>${state._ghError||''}</div>`;
+        return;
+      }
+      state._ghSha = fetched.sha;
+      const ok = await ghWrite({ users: state.users, pos: state.pos, archive: state.archive }, state._ghSha);
+      res.innerHTML = ok
+        ? '<div class="alert alert-success">✓ Data pushed to GitHub successfully.</div>'
+        : `<div class="alert alert-error">✗ Push failed: ${state._ghError||'unknown error'}</div>`;
+    };
+    ghCard.querySelector('#gh-pull-btn').onclick = async () => {
+      const res = document.getElementById('gh-result');
+      res.innerHTML='<div class="alert alert-info">Pulling latest data from GitHub…</div>';
+      const ok = await ghPull();
+      res.innerHTML = ok ? '<div class="alert alert-success">✓ Latest data pulled from GitHub.</div>'
+                         : `<div class="alert alert-error">✗ Pull failed: ${state._ghError||'unknown error'}</div>`;
+      if (ok) render();
+    };
+    ghCard.querySelector('#gh-clear-btn').onclick = () => {
+      if (!confirm('Clear the PAT token from this browser?')) return;
+      localStorage.removeItem('po_gh_token');
+      toast('PAT token cleared from this browser.', 'error');
+      render();
+    };
+  }
+
+  div.appendChild(ghCard);
 
   // ── Anthropic API Key card ─────────────────────────────────
   const card = document.createElement('div'); card.className = 'card';
@@ -1854,8 +2878,15 @@ function renderApiSettings() {
     if (!val) { toast('Please enter an API key.','error'); return; }
     if (!val.startsWith('sk-ant-')) { toast('This does not look like a valid Anthropic key (should start with sk-ant-).','error'); return; }
     state.apiKey = val;
-    saveState();
-    toast('API key saved successfully!');
+    localStorage.setItem('po_tool_apikey', val); // save immediately
+    if (ghConfigured()) {
+      ghPush().then(ok => {
+        if (ok) toast('API key saved and synced to GitHub ✓');
+        else toast('API key saved locally — GitHub sync failed', 'error', 5000);
+      });
+    } else {
+      toast('API key saved successfully!');
+    }
     render();
   };
   if (hasKey) {
@@ -1950,6 +2981,255 @@ function renderChangePassword() {
 }
 
 // ============================================================
+// DATA ANALYSIS
+// ============================================================
+function renderAnalytics() {
+  const div = document.createElement('div');
+  div.innerHTML = `<div class="page-header"><h2>Data Analysis</h2><p>Purchase order values by company, month and project — approved and pending POs</p></div>`;
+
+  const pos = state.pos.filter(p => p.status !== 'draft' && p.status !== 'deleted');
+  if (!pos.length) {
+    div.innerHTML += `<div class="card" style="text-align:center;padding:48px;color:var(--text3)">No PO data available yet.</div>`;
+    return div;
+  }
+
+  // ── Filters ─────────────────────────────────────────────
+  const years = [...new Set(pos.map(p => new Date(p.createdAt||p.requestedAt||Date.now()).getFullYear()))].sort((a,b)=>b-a);
+  const filterCard = document.createElement('div'); filterCard.className='card'; filterCard.style.marginBottom='20px';
+  filterCard.innerHTML=`
+    <div style="display:flex;gap:16px;align-items:center;flex-wrap:wrap">
+      <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;color:var(--cyan)">${svgIcon('filter')} Filters</div>
+      <div class="form-group" style="margin:0;min-width:120px">
+        <label>Year</label>
+        <select id="an-year">
+          <option value="all">All years</option>
+          ${years.map(y=>`<option value="${y}">${y}</option>`).join('')}
+        </select>
+      </div>
+      <div class="form-group" style="margin:0;min-width:160px">
+        <label>Status</label>
+        <select id="an-status">
+          <option value="all">All statuses</option>
+          <option value="approved">Approved only</option>
+          <option value="pending">Pending only</option>
+        </select>
+      </div>
+      <div class="form-group" style="margin:0;min-width:200px">
+        <label>Company</label>
+        <select id="an-company">
+          <option value="all">All companies</option>
+          ${COMPANIES.map(c=>`<option value="${c}">${c}</option>`).join('')}
+        </select>
+      </div>
+    </div>`;
+  div.appendChild(filterCard);
+
+  // ── Summary cards ────────────────────────────────────────
+  const summaryEl = document.createElement('div'); summaryEl.id='an-summary';
+  div.appendChild(summaryEl);
+
+  // ── Charts container ─────────────────────────────────────
+  const chartsEl = document.createElement('div'); chartsEl.id='an-charts';
+  div.appendChild(chartsEl);
+
+  // ── Tables container ─────────────────────────────────────
+  const tablesEl = document.createElement('div'); tablesEl.id='an-tables';
+  div.appendChild(tablesEl);
+
+  // ── Render function ──────────────────────────────────────
+  function getFiltered() {
+    let filtered = [...pos];
+    const year    = document.getElementById('an-year')?.value;
+    const status  = document.getElementById('an-status')?.value;
+    const company = document.getElementById('an-company')?.value;
+    if (year !== 'all')    filtered = filtered.filter(p => new Date(p.createdAt||p.requestedAt||Date.now()).getFullYear() == year);
+    if (status !== 'all')  filtered = filtered.filter(p => p.status === status);
+    if (company !== 'all') filtered = filtered.filter(p => normaliseCompany(p.company) === normaliseCompany(company));
+    return filtered;
+  }
+
+  function fmtK(v) { return v >= 1000 ? `€${(v/1000).toFixed(1)}k` : `€${v.toFixed(0)}`; }
+
+  function renderAll() {
+    const filtered = getFiltered();
+    const total    = filtered.reduce((s,p) => s + (p.total||0), 0);
+    const approved = filtered.filter(p=>p.status==='approved');
+    const pending  = filtered.filter(p=>p.status==='pending');
+
+    // ── Summary cards ──────────────────────────────────────
+    summaryEl.innerHTML = `
+      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:20px">
+        <div class="card" style="padding:18px;text-align:center">
+          <div style="font-size:24px;font-weight:800;color:var(--cyan)">${filtered.length}</div>
+          <div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:0.08em;margin-top:4px">Total POs</div>
+        </div>
+        <div class="card" style="padding:18px;text-align:center">
+          <div style="font-size:24px;font-weight:800;color:var(--text)">€${total.toLocaleString('pt-PT',{minimumFractionDigits:2,maximumFractionDigits:2})}</div>
+          <div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:0.08em;margin-top:4px">Total Value</div>
+        </div>
+        <div class="card" style="padding:18px;text-align:center">
+          <div style="font-size:24px;font-weight:800;color:var(--green)">${approved.length}</div>
+          <div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:0.08em;margin-top:4px">Approved (€${approved.reduce((s,p)=>s+(p.total||0),0).toLocaleString('pt-PT',{minimumFractionDigits:0,maximumFractionDigits:0})})</div>
+        </div>
+        <div class="card" style="padding:18px;text-align:center">
+          <div style="font-size:24px;font-weight:800;color:var(--amber)">${pending.length}</div>
+          <div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:0.08em;margin-top:4px">Pending (€${pending.reduce((s,p)=>s+(p.total||0),0).toLocaleString('pt-PT',{minimumFractionDigits:0,maximumFractionDigits:0})})</div>
+        </div>
+      </div>`;
+
+    // ── By Company ────────────────────────────────────────
+    const byCompany = {};
+    filtered.forEach(p => {
+      const c = p.company || 'Unknown';
+      if (!byCompany[c]) byCompany[c] = { count:0, total:0, approved:0, pending:0 };
+      byCompany[c].count++;
+      byCompany[c].total += p.total||0;
+      if (p.status==='approved') byCompany[c].approved += p.total||0;
+      if (p.status==='pending')  byCompany[c].pending  += p.total||0;
+    });
+    const companyEntries = Object.entries(byCompany).sort((a,b)=>b[1].total-a[1].total);
+
+    // ── By Month ──────────────────────────────────────────
+    const byMonth = {};
+    filtered.forEach(p => {
+      const d = new Date(p.createdAt||p.requestedAt||Date.now());
+      const key = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
+      if (!byMonth[key]) byMonth[key] = { count:0, total:0, approved:0 };
+      byMonth[key].count++;
+      byMonth[key].total += p.total||0;
+      if (p.status==='approved') byMonth[key].approved += p.total||0;
+    });
+    const monthEntries = Object.entries(byMonth).sort((a,b)=>a[0].localeCompare(b[0]));
+
+    // ── By Project ────────────────────────────────────────
+    const byProject = {};
+    filtered.forEach(p => {
+      const proj = p.project || '— No project —';
+      if (!byProject[proj]) byProject[proj] = { count:0, total:0 };
+      byProject[proj].count++;
+      byProject[proj].total += p.total||0;
+    });
+    const projectEntries = Object.entries(byProject).sort((a,b)=>b[1].total-a[1].total);
+
+    // ── Render charts (simple bar charts using divs) ──────
+    const maxCompanyVal = Math.max(...companyEntries.map(([,v])=>v.total), 1);
+    const maxMonthVal   = Math.max(...monthEntries.map(([,v])=>v.total), 1);
+
+    chartsEl.innerHTML = `
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-bottom:20px">
+
+        <!-- By Company chart -->
+        <div class="card">
+          <div style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;color:var(--cyan);margin-bottom:16px">Value by Company</div>
+          <div style="display:flex;flex-direction:column;gap:10px">
+            ${companyEntries.map(([company, data]) => `
+              <div>
+                <div style="display:flex;justify-content:space-between;font-size:10px;margin-bottom:4px">
+                  <span style="color:var(--text2);font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:60%">${esc(company)}</span>
+                  <span style="color:var(--text);font-weight:700">${fmtK(data.total)}</span>
+                </div>
+                <div style="height:8px;background:var(--surface3);border-radius:4px;overflow:hidden">
+                  <div style="height:100%;width:${(data.total/maxCompanyVal*100).toFixed(1)}%;background:linear-gradient(90deg,var(--cyan),var(--blue));border-radius:4px;transition:width 0.3s"></div>
+                </div>
+                <div style="font-size:9px;color:var(--text3);margin-top:2px">${data.count} PO${data.count!==1?'s':''}</div>
+              </div>`).join('')}
+          </div>
+        </div>
+
+        <!-- By Month chart -->
+        <div class="card">
+          <div style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;color:var(--cyan);margin-bottom:16px">Value by Month</div>
+          ${monthEntries.length === 0 ? '<div style="color:var(--text3);font-size:12px">No data</div>' : `
+          <div style="display:flex;align-items:flex-end;gap:6px;height:120px;padding-bottom:20px;position:relative">
+            ${monthEntries.map(([month, data]) => {
+              const pct = (data.total/maxMonthVal*100).toFixed(1);
+              const label = month.split('-').reverse().join('/').slice(0,7);
+              return `<div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;height:100%;position:relative" title="${label}: ${fmtK(data.total)}">
+                <div style="font-size:8px;color:var(--text3);margin-bottom:2px">${fmtK(data.total)}</div>
+                <div style="width:100%;background:linear-gradient(180deg,var(--cyan),var(--blue));border-radius:3px 3px 0 0;height:${pct}%;min-height:3px;opacity:0.85"></div>
+                <div style="font-size:8px;color:var(--text3);margin-top:4px;writing-mode:vertical-lr;transform:rotate(180deg);max-height:40px;overflow:hidden">${label}</div>
+              </div>`;
+            }).join('')}
+          </div>`}
+        </div>
+      </div>`;
+
+    // ── Tables ─────────────────────────────────────────────
+    tablesEl.innerHTML = '';
+
+    // Company table
+    const compCard = document.createElement('div'); compCard.className='card'; compCard.style.marginBottom='20px';
+    compCard.innerHTML=`<div style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;color:var(--cyan);margin-bottom:14px">By Company — Detail</div>
+    <div class="table-wrap"><table>
+      <thead><tr><th>Company</th><th style="text-align:right"># POs</th><th style="text-align:right">Total Value</th><th style="text-align:right">Approved</th><th style="text-align:right">Pending</th></tr></thead>
+      <tbody>
+        ${companyEntries.map(([company,d])=>`<tr>
+          <td style="font-weight:600">${esc(company)}</td>
+          <td style="text-align:right">${d.count}</td>
+          <td style="text-align:right;font-weight:700;color:var(--cyan)">€${d.total.toLocaleString('pt-PT',{minimumFractionDigits:2,maximumFractionDigits:2})}</td>
+          <td style="text-align:right;color:var(--green)">€${d.approved.toLocaleString('pt-PT',{minimumFractionDigits:2,maximumFractionDigits:2})}</td>
+          <td style="text-align:right;color:var(--amber)">€${d.pending.toLocaleString('pt-PT',{minimumFractionDigits:2,maximumFractionDigits:2})}</td>
+        </tr>`).join('')}
+        <tr style="border-top:2px solid var(--border);font-weight:800">
+          <td>TOTAL</td>
+          <td style="text-align:right">${filtered.length}</td>
+          <td style="text-align:right;color:var(--cyan)">€${total.toLocaleString('pt-PT',{minimumFractionDigits:2,maximumFractionDigits:2})}</td>
+          <td style="text-align:right;color:var(--green)">€${approved.reduce((s,p)=>s+(p.total||0),0).toLocaleString('pt-PT',{minimumFractionDigits:2,maximumFractionDigits:2})}</td>
+          <td style="text-align:right;color:var(--amber)">€${pending.reduce((s,p)=>s+(p.total||0),0).toLocaleString('pt-PT',{minimumFractionDigits:2,maximumFractionDigits:2})}</td>
+        </tr>
+      </tbody>
+    </table></div>`;
+    tablesEl.appendChild(compCard);
+
+    // Month table
+    const monthCard = document.createElement('div'); monthCard.className='card'; monthCard.style.marginBottom='20px';
+    monthCard.innerHTML=`<div style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;color:var(--cyan);margin-bottom:14px">By Month — Detail</div>
+    <div class="table-wrap"><table>
+      <thead><tr><th>Month</th><th style="text-align:right"># POs</th><th style="text-align:right">Total Value</th><th style="text-align:right">Approved Value</th></tr></thead>
+      <tbody>
+        ${monthEntries.map(([month,d])=>{
+          const [yr,mo] = month.split('-');
+          const label = new Date(yr,mo-1,1).toLocaleString('en-GB',{month:'long',year:'numeric'});
+          return `<tr>
+            <td style="font-weight:600">${label}</td>
+            <td style="text-align:right">${d.count}</td>
+            <td style="text-align:right;font-weight:700;color:var(--cyan)">€${d.total.toLocaleString('pt-PT',{minimumFractionDigits:2,maximumFractionDigits:2})}</td>
+            <td style="text-align:right;color:var(--green)">€${d.approved.toLocaleString('pt-PT',{minimumFractionDigits:2,maximumFractionDigits:2})}</td>
+          </tr>`;
+        }).join('')}
+      </tbody>
+    </table></div>`;
+    tablesEl.appendChild(monthCard);
+
+    // Project table
+    const projCard = document.createElement('div'); projCard.className='card';
+    projCard.innerHTML=`<div style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;color:var(--cyan);margin-bottom:14px">By Project — Detail</div>
+    <div class="table-wrap"><table>
+      <thead><tr><th>Project</th><th style="text-align:right"># POs</th><th style="text-align:right">Total Value</th><th style="text-align:right">% of Total</th></tr></thead>
+      <tbody>
+        ${projectEntries.map(([project,d])=>`<tr>
+          <td style="font-weight:600">${esc(project)}</td>
+          <td style="text-align:right">${d.count}</td>
+          <td style="text-align:right;font-weight:700;color:var(--cyan)">€${d.total.toLocaleString('pt-PT',{minimumFractionDigits:2,maximumFractionDigits:2})}</td>
+          <td style="text-align:right;color:var(--text2)">${total>0?(d.total/total*100).toFixed(1):0}%</td>
+        </tr>`).join('')}
+      </tbody>
+    </table></div>`;
+    tablesEl.appendChild(projCard);
+  }
+
+  // Attach filter listeners
+  setTimeout(() => {
+    ['an-year','an-status','an-company'].forEach(id => {
+      document.getElementById(id)?.addEventListener('change', renderAll);
+    });
+    renderAll();
+  }, 0);
+
+  return div;
+}
+
+// ============================================================
 // SVG ICONS
 // ============================================================
 function svgIcon(name) {
@@ -1965,7 +3245,8 @@ function svgIcon(name) {
     check:   '<path d="M2 8l4 4 8-8"/>',
     x:       '<path d="M3 3l10 10M13 3L3 13"/>',
     send:    '<path d="M2 8l11-5-5 11-2-4-4-2z"/>',
-    key:     '<circle cx="6" cy="10" r="3"/><path d="M9 10h6M13 8v4"/>',
+    chart:   '<path d="M2 12l4-4 3 3 5-7"/><path d="M2 14h12"/>',
+    filter:  '<path d="M2 3h12l-5 6v4l-2 2V9L2 3z"/>',
   };
   return `<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">${paths[name]||''}</svg>`;
 }
