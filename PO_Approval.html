@@ -2791,6 +2791,7 @@ function renderApiSettings() {
     <div style="display:flex;gap:8px;flex-wrap:wrap">
       <button class="btn btn-primary btn-sm" id="gh-save-btn">Save & Test Connection</button>
       ${ghOk?'<button class="btn btn-outline btn-sm" id="gh-push-btn">⬆ Push Local Data to GitHub</button>':''}
+      ${ghOk?'<button class="btn btn-outline btn-sm" id="gh-cleanup-btn" style="border-color:var(--amber-border);color:var(--amber)">🔧 Fix Company Names</button>':''}
       ${ghOk?'<button class="btn btn-outline btn-sm" id="gh-pull-btn">⬇ Pull Latest from GitHub</button>':''}
       ${ghOk?'<button class="btn btn-outline btn-sm" id="gh-clear-btn" style="color:var(--red);border-color:var(--red-border)">✕ Clear Token</button>':''}
     </div>
@@ -2845,6 +2846,26 @@ function renderApiSettings() {
       res.innerHTML = ok ? '<div class="alert alert-success">✓ Latest data pulled from GitHub.</div>'
                          : `<div class="alert alert-error">✗ Pull failed: ${state._ghError||'unknown error'}</div>`;
       if (ok) render();
+    };
+    ghCard.querySelector('#gh-cleanup-btn').onclick = async () => {
+      const res = document.getElementById('gh-result');
+      // Normalise all company names in state
+      let count = 0;
+      state.pos.forEach(po => {
+        if (po.company) {
+          const clean = normaliseCompany(po.company);
+          if (clean !== po.company) { po.company = clean; count++; }
+        }
+      });
+      res.innerHTML=`<div class="alert alert-info">Fixed ${count} PO company name(s). Pushing to GitHub…</div>`;
+      const fetched = await ghFetch();
+      if (fetched === null) { res.innerHTML=`<div class="alert alert-error">✗ Cannot reach GitHub.</div>`; return; }
+      state._ghSha = fetched.sha;
+      const ok = await ghWrite({ users: state.users, pos: state.pos, archive: state.archive }, state._ghSha);
+      res.innerHTML = ok
+        ? `<div class="alert alert-success">✓ Fixed ${count} company name(s) and pushed to GitHub. Refresh the page to see changes.</div>`
+        : `<div class="alert alert-error">✗ Push failed: ${state._ghError||'unknown error'}</div>`;
+      if (ok) { saveState(); }
     };
     ghCard.querySelector('#gh-clear-btn').onclick = () => {
       if (!confirm('Clear the PAT token from this browser?')) return;
