@@ -571,6 +571,8 @@ function loadState() {
         if (!s.users || s.users.length === 0) state.users.push({...iu});
       }
     });
+    // Migrate: normalise all PO company names
+    state.pos.forEach(po => { if (po.company) po.company = normaliseCompany(po.company); });
   } catch(e) {
     state.users = JSON.parse(JSON.stringify(INITIAL_USERS));
     state.pos = []; state.archive = [];
@@ -663,6 +665,9 @@ async function ghPull() {
     state.users = JSON.parse(JSON.stringify(INITIAL_USERS));
   }
 
+  // Migrate: normalise all PO company names to remove suffix variants and fix casing
+  state.pos.forEach(po => { if (po.company) po.company = normaliseCompany(po.company); });
+
   // Update local cache
   try {
     const posClean = state.pos.map(po => { const {approvedPdfB64, originalPdfB64, ...rest} = po; return rest; });
@@ -689,8 +694,8 @@ function normaliseCompany(name) {
   return String(name||'')
     .toUpperCase()
     .trim()
-    // Strip common legal suffixes
-    .replace(/\b(LDA\.?|SA\.?|S\.A\.?|LTD\.?|LLC\.?|INC\.?|PLC\.?|GMBH\.?|SRL\.?|SL\.?|BV\.?|NV\.?)\s*$/,'')
+    // Strip optional comma + common legal suffixes
+    .replace(/,?\s*\b(LDA\.?|SA\.?|S\.A\.?|LTD\.?|LLC\.?|INC\.?|PLC\.?|GMBH\.?|SRL\.?|SL\.?|BV\.?|NV\.?)\s*$/,'')
     .trim();
 }
 
@@ -1355,7 +1360,7 @@ function confirmCreatePO() {
 
   const po = {
     id: 'PO-'+uid(),
-    company:         g('f-company'),
+    company:         normaliseCompany(g('f-company')),
     poNumber:        g('f-ponum'),
     supplier:        g('f-supplier'),
     supplierAddress: g('f-addr'),
@@ -2667,11 +2672,15 @@ function renderModal() {
       const reason=box.querySelector('#ep-reason').value.trim();
       if (!reason){toast('Please provide a reason for the edit.','error');return;}
       const changes={};
-      const fields={poNumber:'#ep-ponum',company:'#ep-company',supplier:'#ep-supplier',project:'#ep-project',paymentTerms:'#ep-pay',currency:'#ep-currency'};
+      const fields={poNumber:'#ep-ponum',supplier:'#ep-supplier',project:'#ep-project',paymentTerms:'#ep-pay',currency:'#ep-currency'};
       Object.entries(fields).forEach(([k,sel])=>{
         const v=box.querySelector(sel)?.value?.trim();
         if (v!==undefined && v!==(po[k]||'').toString()) changes[k]=v;
       });
+      // Normalise company name
+      const rawCompany = box.querySelector('#ep-company')?.value;
+      const normCompany = normaliseCompany(rawCompany);
+      if (normCompany !== (po.company||'')) changes.company = normCompany;
       const net=parseFloat(box.querySelector('#ep-net').value)||0;
       const tot=parseFloat(box.querySelector('#ep-total').value)||0;
       if (net!==po.netTotal) changes.netTotal=net;
