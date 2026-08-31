@@ -758,6 +758,7 @@ function getApprovalStatus(po) {
 function pendingCount() {
   const u = state.currentUser; if (!u) return 0;
   return state.pos.filter(p => {
+    if (p.status === 'deleted') return false;
     if (p.status !== 'pending') return false;
     if (u.role === 'admin') return true;
     const groups = getApprovalGroups(p.company, p.approvalLevel);
@@ -987,6 +988,7 @@ async function manualSync() {
 function renderDashboard() {
   const u=state.currentUser, isAdmin=u.role==='admin';
   const myPending = state.pos.filter(p => {
+    if (p.status === 'deleted') return false;
     if (p.status !== 'pending') return false;
     if (isAdmin) return true;
     const groups = getApprovalGroups(p.company, p.approvalLevel);
@@ -1001,8 +1003,8 @@ function renderDashboard() {
       <p>${new Date().toLocaleDateString('en-GB',{weekday:'long',year:'numeric',month:'long',day:'numeric'})}</p>
     </div>
     <div class="stats-row">
-      <div class="stat-card"><div class="label">Total POs</div><div class="value">${state.pos.length}</div></div>
-      <div class="stat-card"><div class="label">Pending</div><div class="value" style="color:var(--amber)">${state.pos.filter(p=>p.status==='pending').length}</div></div>
+      <div class="stat-card"><div class="label">Total POs</div><div class="value">${state.pos.filter(p=>p.status!=='deleted').length}</div></div>
+      <div class="stat-card"><div class="label">Pending</div><div class="value" style="color:var(--amber)">${state.pos.filter(p=>p.status==='pending'&&p.status!=='deleted').length}</div></div>
       <div class="stat-card"><div class="label">Approved</div><div class="value" style="color:var(--green)">${state.pos.filter(p=>p.status==='approved').length}</div></div>
       <div class="stat-card"><div class="label">Awaiting Me</div><div class="value" style="color:var(--blue)">${myPending.length}</div></div>
     </div>`;
@@ -1430,7 +1432,7 @@ function viewPO(id) { state.page='po-detail'; state.currentPO=id; render(); }
 // ============================================================
 function renderPOList() {
   const u=state.currentUser, isAdmin=u.role==='admin';
-  const myPOs = isAdmin ? state.pos : state.pos.filter(p=>p.requestedBy===u.id);
+  const myPOs = isAdmin ? state.pos.filter(p=>p.status!=='deleted') : state.pos.filter(p=>p.requestedBy===u.id&&p.status!=='deleted');
   const div = document.createElement('div');
   div.innerHTML=`<div class="page-header"><h2>Purchase Orders</h2><p>${isAdmin?'All POs in the system':'Your submitted POs'}</p></div>`;
   const card=document.createElement('div'); card.className='card'; card.style.padding='0';
@@ -1443,6 +1445,7 @@ function renderPOList() {
 function renderPending() {
   const u=state.currentUser, isAdmin=u.role==='admin';
   const pending = state.pos.filter(p => {
+    if (p.status === 'deleted') return false;
     if (p.status !== 'pending') return false;
     if (isAdmin) return true;
     const groups = getApprovalGroups(p.company, p.approvalLevel);
@@ -1633,6 +1636,28 @@ function renderPODetail() {
 
   // Action buttons
   const actDiv=document.createElement('div'); actDiv.style.marginBottom='24px';
+
+  // Admin-only controls — delete and edit
+  if (isAdmin) {
+    const adminBar = document.createElement('div');
+    adminBar.style.cssText='display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px;padding:12px 16px;background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius);border-left:3px solid var(--amber)';
+    adminBar.innerHTML=`<span style="font-size:9px;text-transform:uppercase;letter-spacing:0.1em;color:var(--amber);font-weight:700;align-self:center;margin-right:8px">Admin</span>`;
+
+    const editBtn = document.createElement('button');
+    editBtn.className='btn btn-outline btn-sm';
+    editBtn.innerHTML=`${svgIcon('settings')} Edit PO`;
+    editBtn.onclick=()=>{ state.modal={type:'editPO', po}; render(); };
+    adminBar.appendChild(editBtn);
+
+    const delBtn = document.createElement('button');
+    delBtn.className='btn btn-sm btn-danger';
+    delBtn.innerHTML=`${svgIcon('x')} Delete PO`;
+    delBtn.onclick=()=>{ state.modal={type:'deletePO', po}; render(); };
+    adminBar.appendChild(delBtn);
+
+    actDiv.appendChild(adminBar);
+  }
+
   if (po.status==='draft'&&isRequester) {
     // Notes field + request button
     const requestPanel = document.createElement('div');
@@ -2346,6 +2371,52 @@ function renderParameters() {
 // ============================================================
 // MODAL
 // ============================================================
+function adminDeletePO(po, reason) {
+  const u = state.currentUser;
+  // Record deletion in archive BEFORE removing
+  addEvent('deleted', po.id, u.id,
+    `PO ${po.poNumber||po.id} DELETED by ${u.name}. Reason: ${reason}. ` +
+    `Was: ${po.status} | ${po.company} | ${po.supplier} | ${fmtCurrency(po.total,po.currency)}`
+  );
+  // Mark as deleted (keep in archive) rather than fully removing
+  po.status   = 'deleted';
+  po.deletedBy = u.id;
+  po.deletedAt = new Date().toISOString();
+  po.deleteReason = reason;
+  state.modal = null;
+  saveState();
+  toast(`PO ${po.poNumber||po.id} deleted. Audit record kept.`);
+  state.page = 'pos';
+  render();
+}
+
+function adminEditPO(po, changes, reason) {
+  const u = state.currentUser;
+  if (!Object.keys(changes).length) { toast('No changes detected.','error'); return; }
+
+  // Record what changed in audit trail
+  const changeDesc = Object.entries(changes)
+    .map(([k,v]) => `${k}: "${po[k]||''}" → "${v}"`)
+    .join(', ');
+  addEvent('edited', po.id, u.id,
+    `PO edited by ${u.name}. Reason: ${reason}. Changes: ${changeDesc}`
+  );
+
+  // Apply changes
+  Object.assign(po, changes);
+  // Recalculate approval level if total changed
+  if (changes.total !== undefined) {
+    po.approvalLevel = getLevel(po.total);
+  }
+  state.modal = null;
+  saveState();
+  toast(`PO updated. Changes recorded in audit trail.`);
+  render();
+}
+
+// ============================================================
+// MODAL
+// ============================================================
 function renderModal() {
   const m=state.modal;
   const ov=document.createElement('div'); ov.className='modal-overlay';
@@ -2368,6 +2439,79 @@ function renderModal() {
     };
     ov.appendChild(box);
   }
+
+  if (m.type==='deletePO') {
+    const po=m.po;
+    const box=document.createElement('div'); box.className='modal';
+    box.innerHTML=`
+      <h3>Delete PO</h3>
+      <div class="modal-desc">You are permanently deleting <strong>${esc(po.poNumber||po.id)}</strong> (${esc(po.supplier)} — ${fmtCurrency(po.total,po.currency)}).<br><br>
+        A record of this deletion will be kept in the archive for audit purposes.</div>
+      <div class="form-group"><label>Reason for deletion <span style="color:var(--red)">*</span></label>
+        <textarea id="del-reason" rows="3" placeholder="e.g. Duplicate entry, wrong supplier, entered in error…"></textarea>
+      </div>
+      <div class="modal-actions">
+        <button class="btn btn-outline" onclick="state.modal=null;render()">Cancel</button>
+        <button class="btn btn-danger" id="confirm-del">${svgIcon('x')} Delete PO</button>
+      </div>`;
+    box.querySelector('#confirm-del').onclick=()=>{
+      const reason=box.querySelector('#del-reason').value.trim();
+      if (!reason){toast('Please provide a reason for deletion.','error');return;}
+      adminDeletePO(po, reason);
+    };
+    ov.appendChild(box);
+  }
+
+  if (m.type==='editPO') {
+    const po=m.po;
+    const box=document.createElement('div'); box.className='modal';
+    box.style.maxWidth='560px';
+    box.innerHTML=`
+      <h3>Edit PO</h3>
+      <div class="modal-desc">Editing <strong>${esc(po.poNumber||po.id)}</strong>. Changes are logged in the audit trail.</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">
+        <div class="form-group" style="margin:0"><label>PO Number</label><input id="ep-ponum" value="${esc(po.poNumber||'')}"></div>
+        <div class="form-group" style="margin:0"><label>Company</label>
+          <select id="ep-company">
+            ${COMPANIES.map(c=>`<option ${normaliseCompany(c)===normaliseCompany(po.company)?'selected':''}>${c}</option>`).join('')}
+          </select>
+        </div>
+        <div class="form-group" style="margin:0"><label>Supplier</label><input id="ep-supplier" value="${esc(po.supplier||'')}"></div>
+        <div class="form-group" style="margin:0"><label>Project</label><input id="ep-project" value="${esc(po.project||'')}"></div>
+        <div class="form-group" style="margin:0"><label>Net Total (€)</label><input id="ep-net" type="number" step="0.01" value="${po.netTotal||0}"></div>
+        <div class="form-group" style="margin:0"><label>Total incl. VAT (€)</label><input id="ep-total" type="number" step="0.01" value="${po.total||0}"></div>
+        <div class="form-group" style="margin:0"><label>Payment Terms</label><input id="ep-pay" value="${esc(po.paymentTerms||'')}"></div>
+        <div class="form-group" style="margin:0"><label>Currency</label>
+          <select id="ep-currency">
+            ${['EUR','USD','GBP','CHF'].map(c=>`<option ${po.currency===c?'selected':''}>${c}</option>`).join('')}
+          </select>
+        </div>
+      </div>
+      <div class="form-group"><label>Reason for edit <span style="color:var(--amber)">*</span></label>
+        <textarea id="ep-reason" rows="2" placeholder="Briefly describe what was corrected and why…"></textarea>
+      </div>
+      <div class="modal-actions">
+        <button class="btn btn-outline" onclick="state.modal=null;render()">Cancel</button>
+        <button class="btn btn-primary" id="confirm-edit">${svgIcon('check')} Save Changes</button>
+      </div>`;
+    box.querySelector('#confirm-edit').onclick=()=>{
+      const reason=box.querySelector('#ep-reason').value.trim();
+      if (!reason){toast('Please provide a reason for the edit.','error');return;}
+      const changes={};
+      const fields={poNumber:'#ep-ponum',company:'#ep-company',supplier:'#ep-supplier',project:'#ep-project',paymentTerms:'#ep-pay',currency:'#ep-currency'};
+      Object.entries(fields).forEach(([k,sel])=>{
+        const v=box.querySelector(sel)?.value?.trim();
+        if (v!==undefined && v!==(po[k]||'').toString()) changes[k]=v;
+      });
+      const net=parseFloat(box.querySelector('#ep-net').value)||0;
+      const tot=parseFloat(box.querySelector('#ep-total').value)||0;
+      if (net!==po.netTotal) changes.netTotal=net;
+      if (tot!==po.total)    changes.total=tot;
+      adminEditPO(po, changes, reason);
+    };
+    ov.appendChild(box);
+  }
+
   return ov;
 }
 
@@ -2674,7 +2818,7 @@ function renderAnalytics() {
   const div = document.createElement('div');
   div.innerHTML = `<div class="page-header"><h2>Data Analysis</h2><p>Purchase order values by company, month and project — approved and pending POs</p></div>`;
 
-  const pos = state.pos.filter(p => p.status !== 'draft');
+  const pos = state.pos.filter(p => p.status !== 'draft' && p.status !== 'deleted');
   if (!pos.length) {
     div.innerHTML += `<div class="card" style="text-align:center;padding:48px;color:var(--text3)">No PO data available yet.</div>`;
     return div;
