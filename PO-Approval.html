@@ -2048,17 +2048,178 @@ Please review the PO and resubmit if applicable.
 // ARCHIVE
 // ============================================================
 function renderArchive() {
-  const div=document.createElement('div');
-  div.innerHTML=`<div class="page-header"><h2>Archive</h2><p>Complete log of all PO approval activities</p></div>`;
-  const card=document.createElement('div'); card.className='card'; card.style.padding='0 24px';
-  if (!state.archive.length) { card.innerHTML='<p style="padding:28px;text-align:center;color:var(--text3)">No archive entries yet.</p>'; div.appendChild(card); return div; }
-  const tl=document.createElement('div'); tl.className='timeline';
-  state.archive.forEach(ev=>{
-    const item=buildTimelineItem(ev);
-    if (ev.poId) { item.style.cursor='pointer'; item.onclick=()=>viewPO(ev.poId); }
-    tl.appendChild(item);
-  });
-  card.appendChild(tl); div.appendChild(card); return div;
+  const div = document.createElement('div');
+  div.innerHTML = `<div class="page-header"><h2>Archive</h2><p>Complete log of all PO activities — click a row to expand details</p></div>`;
+
+  if (!state.archive.length) {
+    div.innerHTML += `<div class="card" style="text-align:center;padding:48px;color:var(--text3)">No archive entries yet.</div>`;
+    return div;
+  }
+
+  // ── Filters ──────────────────────────────────────────────
+  const companies = [...new Set(state.pos.map(p=>p.company).filter(Boolean))].sort();
+  const filterCard = document.createElement('div'); filterCard.className='card'; filterCard.style.marginBottom='16px';
+  filterCard.innerHTML=`
+    <div style="display:flex;gap:14px;align-items:flex-end;flex-wrap:wrap">
+      <div class="form-group" style="margin:0;min-width:200px">
+        <label>Filter by Company</label>
+        <select id="arc-company">
+          <option value="all">All companies</option>
+          ${companies.map(c=>`<option value="${c}">${esc(c)}</option>`).join('')}
+        </select>
+      </div>
+      <div class="form-group" style="margin:0;min-width:150px">
+        <label>Filter by Status</label>
+        <select id="arc-status">
+          <option value="all">All statuses</option>
+          <option value="approved">Approved</option>
+          <option value="pending">Pending</option>
+          <option value="rejected">Rejected</option>
+          <option value="deleted">Deleted</option>
+          <option value="draft">Draft</option>
+        </select>
+      </div>
+      <div class="form-group" style="margin:0;flex:1;min-width:180px">
+        <label>Search</label>
+        <input id="arc-search" placeholder="PO number, supplier, project…">
+      </div>
+    </div>`;
+  div.appendChild(filterCard);
+
+  // ── PO list container ─────────────────────────────────────
+  const listEl = document.createElement('div'); listEl.id='arc-list';
+  div.appendChild(listEl);
+
+  function renderList() {
+    const company = document.getElementById('arc-company')?.value || 'all';
+    const status  = document.getElementById('arc-status')?.value  || 'all';
+    const search  = (document.getElementById('arc-search')?.value || '').toLowerCase().trim();
+
+    // Group archive events by PO
+    const poMap = {};
+    state.archive.forEach(ev => {
+      if (!ev.poId) return;
+      if (!poMap[ev.poId]) poMap[ev.poId] = [];
+      poMap[ev.poId].push(ev);
+    });
+
+    // Build PO rows — sorted by most recent event first
+    let rows = Object.entries(poMap).map(([poId, events]) => {
+      const po = state.pos.find(p=>p.id===poId);
+      const latest = events[0];
+      return { poId, po, events, latest };
+    }).sort((a,b) => new Date(b.latest.ts) - new Date(a.latest.ts));
+
+    // Apply filters
+    if (company !== 'all') rows = rows.filter(r => normaliseCompany(r.po?.company) === normaliseCompany(company));
+    if (status  !== 'all') rows = rows.filter(r => r.po?.status === status);
+    if (search) rows = rows.filter(r => {
+      const po = r.po;
+      return (po?.poNumber||'').toLowerCase().includes(search) ||
+             (po?.supplier||'').toLowerCase().includes(search) ||
+             (po?.project||'').toLowerCase().includes(search) ||
+             (po?.company||'').toLowerCase().includes(search) ||
+             r.poId.toLowerCase().includes(search);
+    });
+
+    listEl.innerHTML = '';
+
+    if (!rows.length) {
+      listEl.innerHTML = `<div class="card" style="text-align:center;padding:32px;color:var(--text3)">No matching records found.</div>`;
+      return;
+    }
+
+    const statusColors = { approved:'var(--green)', pending:'var(--amber)', rejected:'var(--red)', deleted:'var(--text3)', draft:'var(--blue)' };
+    const statusBg     = { approved:'var(--green-dim)', pending:'var(--amber-dim)', rejected:'var(--red-dim)', deleted:'var(--surface3)', draft:'var(--blue-dim)' };
+
+    rows.forEach(({ poId, po, events }) => {
+      const status = po?.status || 'unknown';
+      const row = document.createElement('div');
+      row.style.cssText='background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);margin-bottom:8px;overflow:hidden;transition:border-color 0.15s';
+
+      // ── Summary row (always visible) ──────────────────────
+      const summary = document.createElement('div');
+      summary.style.cssText='display:flex;align-items:center;gap:12px;padding:12px 16px;cursor:pointer;user-select:none';
+      summary.innerHTML=`
+        <div style="width:8px;height:8px;border-radius:50%;background:${statusColors[status]||'var(--text3)'};flex-shrink:0"></div>
+        <div style="flex:1;min-width:0">
+          <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+            <span style="font-weight:700;font-size:12px;color:var(--text)">${esc(po?.poNumber||poId)}</span>
+            <span style="font-size:11px;color:var(--text2)">${esc(po?.supplier||'—')}</span>
+            ${po?.project?`<span style="font-size:10px;color:var(--text3)">· ${esc(po.project)}</span>`:''}
+          </div>
+          <div style="font-size:10px;color:var(--text3);margin-top:2px">${esc(po?.company||'—')}</div>
+        </div>
+        <div style="text-align:right;flex-shrink:0">
+          <div style="font-weight:700;font-size:12px;color:var(--cyan)">${po?fmtCurrency(po.total,po.currency):'—'}</div>
+          <div style="font-size:10px;color:var(--text3);margin-top:2px">${fmtDate(events[0]?.ts)}</div>
+        </div>
+        <div style="flex-shrink:0">
+          <span style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;padding:3px 8px;border-radius:3px;background:${statusBg[status]||'var(--surface3)'};color:${statusColors[status]||'var(--text3)'}">${status}</span>
+        </div>
+        <div style="flex-shrink:0;font-size:14px;color:var(--text3);transition:transform 0.2s" class="arc-chevron">▸</div>`;
+
+      // ── Detail panel (hidden by default) ─────────────────
+      const detail = document.createElement('div');
+      detail.style.cssText='display:none;border-top:1px solid var(--border);background:var(--surface2)';
+
+      // PO info + View button
+      if (po) {
+        const infoBar = document.createElement('div');
+        infoBar.style.cssText='display:flex;justify-content:space-between;align-items:center;padding:10px 16px;flex-wrap:wrap;gap:8px;border-bottom:1px solid var(--border)';
+        infoBar.innerHTML=`
+          <div style="display:flex;gap:20px;flex-wrap:wrap;font-size:11px">
+            <span><span style="color:var(--text3)">Company:</span> <strong>${esc(po.company||'—')}</strong></span>
+            <span><span style="color:var(--text3)">Supplier:</span> <strong>${esc(po.supplier||'—')}</strong></span>
+            <span><span style="color:var(--text3)">Level:</span> <strong>L${po.approvalLevel||'—'}</strong></span>
+            <span><span style="color:var(--text3)">Payment:</span> <strong>${esc(po.paymentTerms||'—')}</strong></span>
+            ${po.approvedAt?`<span><span style="color:var(--text3)">Approved:</span> <strong>${fmtDate(po.approvedAt)}</strong></span>`:''}
+          </div>
+          <button class="btn btn-outline btn-sm" onclick="viewPO('${poId}')">View PO →</button>`;
+        detail.appendChild(infoBar);
+      }
+
+      // Timeline of events
+      const tl = document.createElement('div');
+      tl.style.cssText='padding:12px 16px;display:flex;flex-direction:column;gap:6px';
+      events.forEach(ev => {
+        const evRow = document.createElement('div');
+        evRow.style.cssText='display:flex;gap:10px;align-items:flex-start;font-size:11px';
+        const icons = { created:'📄', requested:'📤', approved:'✅', rejected:'❌', email:'📧', deleted:'🗑️', edited:'✏️', approval_part:'👍' };
+        evRow.innerHTML=`
+          <span style="flex-shrink:0;width:20px;text-align:center">${icons[ev.type]||'•'}</span>
+          <span style="color:var(--text3);flex-shrink:0;min-width:130px">${fmtDateTime(ev.ts)}</span>
+          <span style="color:var(--text2);font-weight:600;flex-shrink:0;min-width:90px">${esc(ev.userName||ev.type)}</span>
+          <span style="color:var(--text2)">${ev.type==='email'?`📧 → ${esc(ev.to)}: ${esc(ev.subject||'')}`:esc(ev.message||ev.type)}</span>`;
+        tl.appendChild(evRow);
+      });
+      detail.appendChild(tl);
+
+      // Toggle expand/collapse
+      let expanded = false;
+      summary.onclick = () => {
+        expanded = !expanded;
+        detail.style.display = expanded ? 'block' : 'none';
+        row.style.borderColor = expanded ? 'var(--cyan-border)' : 'var(--border)';
+        summary.querySelector('.arc-chevron').style.transform = expanded ? 'rotate(90deg)' : '';
+      };
+
+      row.appendChild(summary);
+      row.appendChild(detail);
+      listEl.appendChild(row);
+    });
+  }
+
+  // Attach filter listeners after DOM insertion
+  setTimeout(() => {
+    ['arc-company','arc-status'].forEach(id => {
+      document.getElementById(id)?.addEventListener('change', renderList);
+    });
+    document.getElementById('arc-search')?.addEventListener('input', renderList);
+    renderList();
+  }, 0);
+
+  return div;
 }
 
 function buildTimelineItem(ev) {
