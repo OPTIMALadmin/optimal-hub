@@ -2062,14 +2062,8 @@ function renderArchive() {
   }
 
   // ── Filters ──────────────────────────────────────────────
-  // Group companies by normalised name to avoid duplicates like "LDA.", "LDA", etc.
-  const companyMap = {};
-  state.pos.forEach(p => {
-    if (!p.company) return;
-    const norm = normaliseCompany(p.company);
-    if (!companyMap[norm]) companyMap[norm] = norm; // use normalised as display name
-  });
-  const companies = Object.keys(companyMap).sort();
+  // Use normalised company names to avoid duplicates
+  const companies = [...new Set(state.pos.map(p => normaliseCompany(p.company)).filter(Boolean))].sort();
 
   const filterCard = document.createElement('div'); filterCard.className='card'; filterCard.style.marginBottom='16px';
   filterCard.innerHTML=`
