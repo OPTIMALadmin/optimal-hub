@@ -457,16 +457,29 @@ async function ghWrite(data, sha) {
     apiKey:  localStorage.getItem('po_tool_apikey') || state.apiKey || '',
     ghToken: localStorage.getItem('po_gh_token') || '',
     pos:     (data.pos||[]).map(po => {
-      const {approvedPdfB64, originalPdfB64, ...rest} = po;
-      return rest;
+      const cleaned = {...po};
+      // Remove ALL binary/PDF data — these are stored separately in pdfs/ folder
+      delete cleaned.originalPdfB64;
+      delete cleaned.approvedPdfB64;
+      delete cleaned.reviewPdfB64;
+      // Remove any other oversized fields (safety catch-all)
+      Object.keys(cleaned).forEach(k => {
+        if (typeof cleaned[k] === 'string' && cleaned[k].length > 5000) {
+          console.warn('[GH] Stripping oversized field:', k, cleaned[k].length, 'chars');
+          delete cleaned[k];
+        }
+      });
+      return cleaned;
     }),
   };
 
   // Safe base64 encoding that handles large data and special characters
   const jsonStr = JSON.stringify(clean, null, 2);
+  console.log('[GH] Writing', jsonStr.length, 'chars');
+  if (jsonStr.length > 500000) console.warn('[GH] Large file warning:', jsonStr.length, 'chars');
+
   let b64;
   try {
-    // Use TextEncoder + chunked btoa for large/UTF-8 data
     const bytes = new TextEncoder().encode(jsonStr);
     let binary = '';
     const chunkSize = 8192;
@@ -480,7 +493,7 @@ async function ghWrite(data, sha) {
     return false;
   }
 
-  console.log('[GH] Writing', jsonStr.length, 'chars,', b64.length, 'base64 chars, sha:', sha);
+  console.log('[GH] Writing', b64.length, 'base64 chars, sha:', sha);
 
   const newSha = await ghWriteFile(
     GH_DATA_FILE,
