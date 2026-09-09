@@ -414,50 +414,70 @@ async function ghFetch() {
   try {
     const c = getGHConfig();
     console.log('[GH] Fetching from:', `${c.owner}/${c.repo}`, 'branch:', c.branch);
-    const r = await fetch(
+    const headers = ghHeaders();
+
+    // First get the file metadata to check size
+    const metaRes = await fetch(
       `https://api.github.com/repos/${c.owner}/${c.repo}/contents/${GH_DATA_FILE}?ref=${c.branch}&t=${Date.now()}`,
-      { headers: ghHeaders() }
+      { headers }
     );
-    console.log('[GH] Fetch response status:', r.status);
-    if (r.status === 404) return { data: null, sha: null };
-    if (r.status === 401) { state._ghError = 'Authentication failed (401) — check your PAT token'; return null; }
-    if (r.status === 403) { state._ghError = 'Access forbidden (403) — PAT may lack repo permissions'; return null; }
-    if (!r.ok) {
-      const text = await r.text();
-      state._ghError = `HTTP ${r.status}: ${text}`;
-      console.error('[GH] Fetch failed:', r.status, text);
+    console.log('[GH] Fetch response status:', metaRes.status);
+
+    if (metaRes.status === 404) return { data: null, sha: null };
+    if (metaRes.status === 401) { state._ghError = 'Authentication failed (401) — check your PAT token'; return null; }
+    if (metaRes.status === 403) { state._ghError = 'Access forbidden (403) — PAT may lack repo permissions'; return null; }
+    if (!metaRes.ok) {
+      const text = await metaRes.text();
+      state._ghError = `HTTP ${metaRes.status}: ${text}`;
       return null;
     }
-    const json = await r.json();
-    const raw = json.content.replace(/\n/g,'');
 
-    // Check if content looks complete (should end with })
-    if (!raw || raw.length === 0) {
-      console.error('[GH] Empty content received');
-      state._ghError = 'Empty content from GitHub';
-      return null; // Return null so we don't overwrite with stale data
-    }
+    const meta = await metaRes.json();
 
-    try {
-      const bytes = Uint8Array.from(atob(raw), c => c.charCodeAt(0));
-      const jsonStr = new TextDecoder('utf-8').decode(bytes);
-
-      // Validate JSON looks complete before parsing
-      const trimmed = jsonStr.trim();
-      if (!trimmed.endsWith('}')) {
-        console.error('[GH] JSON appears truncated, last chars:', trimmed.slice(-20));
-        state._ghError = 'GitHub data appears truncated — file may be too large';
-        return null; // Return null — don't use truncated data
+    // If content is present and non-empty, use it directly
+    if (meta.content && meta.content.trim().length > 0) {
+      try {
+        const raw = meta.content.replace(/\n/g,'');
+        const bytes = Uint8Array.from(atob(raw), c => c.charCodeAt(0));
+        const jsonStr = new TextDecoder('utf-8').decode(bytes);
+        const trimmed = jsonStr.trim();
+        if (!trimmed.endsWith('}')) {
+          console.warn('[GH] Content appears truncated, trying download_url...');
+        } else {
+          const data = JSON.parse(jsonStr);
+          state._ghError = null;
+          return { data, sha: meta.sha };
+        }
+      } catch(e) {
+        console.warn('[GH] Content parse failed, trying download_url:', e.message);
       }
-
-      const data = JSON.parse(jsonStr);
-      state._ghError = null;
-      return { data, sha: json.sha };
-    } catch(e) {
-      console.error('[GH] JSON parse/decode error:', e);
-      state._ghError = 'JSON parse error: ' + e.message;
-      return null; // Return null — don't use corrupt data
     }
+
+    // Fall back to download_url for large files
+    if (meta.download_url) {
+      console.log('[GH] Using download_url for large file');
+      const dlRes = await fetch(meta.download_url + '?t=' + Date.now(), { headers: { 'Authorization': `token ${c.token}` } });
+      if (!dlRes.ok) { state._ghError = 'Download failed: ' + dlRes.status; return null; }
+      const jsonStr = await dlRes.text();
+      if (!jsonStr.trim().endsWith('}')) {
+        state._ghError = 'Downloaded data appears truncated';
+        console.error('[GH] Truncated data from download_url');
+        return null;
+      }
+      try {
+        const data = JSON.parse(jsonStr);
+        state._ghError = null;
+        return { data, sha: meta.sha };
+      } catch(e) {
+        state._ghError = 'JSON parse error: ' + e.message;
+        return null;
+      }
+    }
+
+    state._ghError = 'Empty content from GitHub';
+    console.error('[GH] Empty content received');
+    return null;
+
   } catch(e) {
     state._ghError = `Network error: ${e.message}`;
     console.error('[GH] Fetch network error:', e);
@@ -466,20 +486,17 @@ async function ghFetch() {
 }
 
 async function ghWrite(data, sha) {
-  // Strip ALL binary/large data — PDFs are stored separately in pdfs/ folder
-  const MAX_ARCHIVE = 500; // keep only most recent events
+  const MAX_ARCHIVE = 300;
   const clean = {
     users:   data.users,
-    archive: (data.archive||[]).slice(0, MAX_ARCHIVE), // limit archive size
+    archive: (data.archive||[]).slice(0, MAX_ARCHIVE),
     apiKey:  localStorage.getItem('po_tool_apikey') || state.apiKey || '',
     ghToken: localStorage.getItem('po_gh_token') || '',
     pos:     (data.pos||[]).map(po => {
       const cleaned = {...po};
-      // Remove ALL binary/PDF data — these are stored separately in pdfs/ folder
       delete cleaned.originalPdfB64;
       delete cleaned.approvedPdfB64;
       delete cleaned.reviewPdfB64;
-      // Remove any other oversized fields (safety catch-all)
       Object.keys(cleaned).forEach(k => {
         if (typeof cleaned[k] === 'string' && cleaned[k].length > 5000) {
           console.warn('[GH] Stripping oversized field:', k, cleaned[k].length, 'chars');
@@ -490,43 +507,66 @@ async function ghWrite(data, sha) {
     }),
   };
 
-  // Safe base64 encoding that handles large data and special characters
   const jsonStr = JSON.stringify(clean, null, 2);
   console.log('[GH] Writing', jsonStr.length, 'chars');
   if (jsonStr.length > 500000) console.warn('[GH] Large file warning:', jsonStr.length, 'chars');
 
-  let b64;
   try {
-    const bytes = new TextEncoder().encode(jsonStr);
-    let binary = '';
-    const chunkSize = 8192;
-    for (let i = 0; i < bytes.length; i += chunkSize) {
-      binary += String.fromCharCode(...bytes.subarray(i, i + chunkSize));
-    }
-    b64 = btoa(binary);
+    const c = getGHConfig();
+    const headers = {
+      'Authorization': `token ${c.token}`,
+      'Content-Type': 'application/json',
+      'Accept': 'application/vnd.github.v3+json',
+    };
+
+    // Step 1: Create blob with utf-8 encoding (avoids btoa issues)
+    const blobRes = await fetch(`https://api.github.com/repos/${c.owner}/${c.repo}/git/blobs`, {
+      method: 'POST', headers,
+      body: JSON.stringify({ content: jsonStr, encoding: 'utf-8' })
+    });
+    const blob = await blobRes.json();
+    if (!blob.sha) { state._ghError = 'Blob creation failed: ' + JSON.stringify(blob); return false; }
+
+    // Step 2: Get current commit to use as base
+    const refRes = await fetch(`https://api.github.com/repos/${c.owner}/${c.repo}/git/refs/heads/${c.branch}`, { headers });
+    const ref = await refRes.json();
+    const parentSha = ref.object?.sha;
+    if (!parentSha) { state._ghError = 'Could not get current ref'; return false; }
+
+    // Step 3: Create tree
+    const treeRes = await fetch(`https://api.github.com/repos/${c.owner}/${c.repo}/git/trees`, {
+      method: 'POST', headers,
+      body: JSON.stringify({ base_tree: parentSha, tree: [{ path: GH_DATA_FILE, mode: '100644', type: 'blob', sha: blob.sha }] })
+    });
+    const tree = await treeRes.json();
+    if (!tree.sha) { state._ghError = 'Tree creation failed'; return false; }
+
+    // Step 4: Create commit
+    const commitRes = await fetch(`https://api.github.com/repos/${c.owner}/${c.repo}/git/commits`, {
+      method: 'POST', headers,
+      body: JSON.stringify({ message: `PO data update — ${new Date().toISOString()}`, tree: tree.sha, parents: [parentSha] })
+    });
+    const commit = await commitRes.json();
+    if (!commit.sha) { state._ghError = 'Commit creation failed'; return false; }
+
+    // Step 5: Update ref
+    const updateRes = await fetch(`https://api.github.com/repos/${c.owner}/${c.repo}/git/refs/heads/${c.branch}`, {
+      method: 'PATCH', headers,
+      body: JSON.stringify({ sha: commit.sha })
+    });
+    const updated = await updateRes.json();
+    if (!updated.object?.sha) { state._ghError = 'Ref update failed'; return false; }
+
+    state._ghSha = updated.object.sha;
+    state._ghError = null;
+    console.log('[GH] Data saved OK via Git Tree API, sha:', state._ghSha);
+    return true;
+
   } catch(e) {
-    console.error('[GH] Encoding error:', e);
-    state._ghError = 'Encoding error: ' + e.message;
+    state._ghError = 'Network error: ' + e.message;
+    console.error('[GH] Write error:', e);
     return false;
   }
-
-  console.log('[GH] Writing', b64.length, 'base64 chars, sha:', sha);
-
-  const newSha = await ghWriteFile(
-    GH_DATA_FILE,
-    b64,
-    sha,
-    `PO data update — ${new Date().toISOString()}`
-  );
-  if (newSha) {
-    state._ghSha = newSha;
-    state._ghError = null;
-    console.log('[GH] Data saved OK, new sha:', newSha);
-    return true;
-  }
-  state._ghError = state._ghError || 'Write failed — SHA conflict or permission denied';
-  console.error('[GH] Write failed, error:', state._ghError);
-  return false;
 }
 
 // ---- PDF storage ----
