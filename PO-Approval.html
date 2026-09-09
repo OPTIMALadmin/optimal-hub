@@ -1679,7 +1679,12 @@ function renderPODetail() {
       </div>
       <div id="pdf-btn-wrap"></div>
     </div>`;
-    if (po.approvedPdfB64 || po.approvedPdfFilename) {
+    if (po.status === 'approved') {
+      // Always show download button for approved POs
+      // If no filename stored, derive it from PO number
+      if (!po.approvedPdfFilename) {
+        po.approvedPdfFilename = `PO_${(po.poNumber||po.id).replace(/[^a-zA-Z0-9]/g,'_')}_APPROVED.pdf`;
+      }
       const dlBtn = document.createElement('button');
       dlBtn.className = 'btn btn-success btn-sm';
       dlBtn.innerHTML = '⬇ Download Approved PDF';
