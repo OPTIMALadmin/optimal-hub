@@ -1751,6 +1751,43 @@ function renderPODetail() {
     editBtn.onclick=()=>{ state.modal={type:'editPO', po}; render(); };
     adminBar.appendChild(editBtn);
 
+    if (po.status === 'approved') {
+      const regenBtn = document.createElement('button');
+      regenBtn.className='btn btn-outline btn-sm';
+      regenBtn.innerHTML=`🔄 Regenerate PDF`;
+      regenBtn.onclick=async()=>{
+        regenBtn.disabled=true; regenBtn.textContent='Generating…';
+        try {
+          const approvedNames = (po.approvals||[]).map(l=>state.users.find(u=>u.login===l)?.name||l).join(', ')
+            || state.users.find(u=>u.id===po.approvedBy)?.name || 'Unknown';
+          const b64 = await generateApprovedPDF(po, approvedNames, po.approvedAt);
+          const filename = `PO_${(po.poNumber||po.id).replace(/[^a-zA-Z0-9]/g,'_')}_APPROVED.pdf`;
+          po.approvedPdfFilename = filename;
+          // Save to GitHub
+          if (ghConfigured()) {
+            const saved = await ghSavePDF(b64, filename);
+            if (saved) {
+              toast('Approved PDF regenerated and saved to GitHub ✓');
+            } else {
+              toast('PDF generated but GitHub save failed — downloading locally', 'error', 5000);
+            }
+          }
+          // Download immediately
+          const link = document.createElement('a');
+          link.href = 'data:application/pdf;base64,' + b64;
+          link.download = filename;
+          link.click();
+          // Save state with new filename
+          po.approvedPdfB64 = null; // don't store in state
+          saveState();
+        } catch(e) {
+          toast('PDF regeneration failed: ' + e.message, 'error', 6000);
+        }
+        regenBtn.disabled=false; regenBtn.innerHTML='🔄 Regenerate PDF';
+      };
+      adminBar.appendChild(regenBtn);
+    }
+
     const delBtn = document.createElement('button');
     delBtn.className='btn btn-sm btn-danger';
     delBtn.innerHTML=`${svgIcon('x')} Delete PO`;
