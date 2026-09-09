@@ -1901,24 +1901,177 @@ async function generateApprovedPDF(po, approverName, approvedAt) {
     for (let i = 0; i < binaryStr.length; i++) pdfBytes[i] = binaryStr.charCodeAt(i);
     pdfDoc = await PDFDocument.load(pdfBytes, { ignoreEncryption: true });
   } else {
-    // No original PDF — build a simple one-page summary
+    // No original PDF — generate a professional PO document matching the Optimal format
     pdfDoc = await PDFDocument.create();
-    const page = pdfDoc.addPage(PageSizes.A4);
-    const font = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
-    const fontR = await pdfDoc.embedFont(StandardFonts.Helvetica);
-    const { width, height } = page.getSize();
-    const m = 50;
-    let y = height - 60;
+    const fontB  = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
+    const fontR  = await pdfDoc.embedFont(StandardFonts.Helvetica);
+    const fontBI = await pdfDoc.embedFont(StandardFonts.HelveticaBoldOblique);
 
-    page.drawText('PURCHASE ORDER', { x:m, y, font, size:18, color:rgb(0.05,0.1,0.18) });
-    y -= 20;
-    page.drawText(`PO Number: ${po.poNumber||po.id}`, { x:m, y, font:fontR, size:10, color:rgb(0.3,0.3,0.3) });
-    y -= 14;
-    page.drawText(`Company: ${po.company||''}`, { x:m, y, font:fontR, size:10, color:rgb(0.3,0.3,0.3) });
-    y -= 14;
-    page.drawText(`Supplier: ${po.supplier||''}`, { x:m, y, font:fontR, size:10, color:rgb(0.3,0.3,0.3) });
-    y -= 14;
-    page.drawText(`Amount: ${fmtCurrency(po.total, po.currency)}`, { x:m, y, font:fontR, size:10, color:rgb(0.3,0.3,0.3) });
+    // Company info lookup
+    const COMPANY_INFO = {
+      'OPTIMAL GROUP':                  { name:'OPTIMAL GROUP LDA.',          nif:'508731232', address:'Rua do Moinho Vermelho, nº 50\n2645-449 Alcabideche\nPortugal', tel:'+351 21 099 7788', email:'info@optimal.pt', web:'www.optimal.pt' },
+      'OPTIMAL STRUCTURAL SOLUTIONS':   { name:'OPTIMAL STRUCTURAL SOLUTIONS LDA.', nif:'508731232', address:'Rua do Moinho Vermelho, nº 50\n2645-449 Alcabideche\nPortugal', tel:'+351 21 099 7788', email:'info@optimal.pt', web:'www.optimal.pt' },
+      'OPTIMAL SPACE':                  { name:'OPTIMAL SPACE LDA.',          nif:'508731232', address:'Rua do Moinho Vermelho, nº 50\n2645-449 Alcabideche\nPortugal', tel:'+351 21 099 7788', email:'info@optimal.pt', web:'www.optimal.pt' },
+      'OPTIMAL HIGH VOLUME':            { name:'OPTIMAL HIGH VOLUME LDA.',    nif:'508731232', address:'Rua do Moinho Vermelho, nº 50\n2645-449 Alcabideche\nPortugal', tel:'+351 21 099 7788', email:'info@optimal.pt', web:'www.optimal.pt' },
+      'OPTIMAL MARINE':                 { name:'OPTIMAL MARINE LDA.',         nif:'508731232', address:'Rua do Moinho Vermelho, nº 50\n2645-449 Alcabideche\nPortugal', tel:'+351 21 099 7788', email:'info@optimal.pt', web:'www.optimal.pt' },
+      'ATLANTIC SPACEPORT CONSORTIUM':  { name:'ATLANTIC SPACEPORT CONSORTIUM', nif:'',        address:'Rua do Moinho Vermelho, nº 50\n2645-449 Alcabideche\nPortugal', tel:'+351 21 099 7788', email:'info@optimal.pt', web:'www.optimal.pt' },
+    };
+    const compInfo = COMPANY_INFO[normaliseCompany(po.company)] || COMPANY_INFO['OPTIMAL STRUCTURAL SOLUTIONS'];
+
+    // Colours
+    const cBlack  = rgb(0,0,0);
+    const cGray   = rgb(0.4,0.4,0.4);
+    const cLGray  = rgb(0.85,0.85,0.85);
+    const cDark   = rgb(0.15,0.15,0.15);
+    const cLine   = rgb(0.7,0.7,0.7);
+
+    // Helper: truncate text to fit width
+    function truncate(text, font, size, maxW) {
+      let t = String(text||'');
+      while (t.length > 1 && font.widthOfTextAtSize(t, size) > maxW) t = t.slice(0,-1);
+      return t;
+    }
+
+    // Draw a page
+    function drawPage(pageItems, pageNum, totalPages) {
+      const page = pdfDoc.addPage(PageSizes.A4);
+      const { width, height } = page.getSize();
+      const ml = 30, mr = 30, mt = 30;
+      const pw = width - ml - mr;
+      let y = height - mt;
+
+      // ── Header box ─────────────────────────────────────────
+      const hdrH = 100;
+      page.drawRectangle({ x:ml, y:y-hdrH, width:pw, height:hdrH, color:rgb(0.97,0.97,0.97), borderColor:cLine, borderWidth:0.5 });
+
+      // Company name (logo placeholder)
+      page.drawText(compInfo.name, { x:ml+8, y:y-16, font:fontB, size:11, color:cDark });
+      page.drawText(compInfo.address.split('\n')[0], { x:ml+8, y:y-28, font:fontR, size:7.5, color:cGray });
+      page.drawText(compInfo.address.split('\n')[1]||'', { x:ml+8, y:y-38, font:fontR, size:7.5, color:cGray });
+      page.drawText(`Tel: ${compInfo.tel}`, { x:ml+8, y:y-50, font:fontR, size:7, color:cGray });
+      page.drawText(`E-mail: ${compInfo.email}`, { x:ml+8, y:y-60, font:fontR, size:7, color:cGray });
+      page.drawText(`NIF/VAT: ${compInfo.nif}`, { x:ml+8, y:y-72, font:fontR, size:7, color:cGray });
+      if (po.paymentTerms) page.drawText(`Cond. Pagamento / Payment Terms: ${po.paymentTerms}`, { x:ml+8, y:y-84, font:fontR, size:7, color:cGray });
+
+      // PO title (right side)
+      const titleX = ml + pw/2;
+      page.drawText('Nota de Encomenda / Purchase Order Nº:', { x:titleX, y:y-12, font:fontB, size:9, color:cDark });
+      page.drawText(po.poNumber||po.id||'—', { x:titleX+220, y:y-12, font:fontB, size:9, color:cDark });
+      page.drawText(`Data/Date: ${new Date(po.createdAt||Date.now()).toLocaleDateString('pt-PT')}`, { x:titleX, y:y-24, font:fontR, size:8, color:cDark });
+      if (po.project) page.drawText(`Projecto / Project: ${po.project}`, { x:titleX, y:y-36, font:fontR, size:8, color:cDark });
+
+      y -= hdrH + 8;
+
+      // ── Supplier box ────────────────────────────────────────
+      const supH = 60;
+      page.drawRectangle({ x:ml, y:y-supH, width:pw, height:supH, color:rgb(1,1,1), borderColor:cLine, borderWidth:0.5 });
+      page.drawText('Fornecedor / Supplier:', { x:ml+4, y:y-12, font:fontB, size:8, color:cDark });
+      page.drawText(po.supplier||'—', { x:ml+4, y:y-24, font:fontB, size:9, color:cDark });
+      if (po.supplierAddress) page.drawText(po.supplierAddress, { x:ml+4, y:y-36, font:fontR, size:7.5, color:cGray });
+      if (po.supplierNIF) page.drawText(`NIF/VAT: ${po.supplierNIF}`, { x:ml+4, y:y-48, font:fontR, size:7.5, color:cGray });
+
+      y -= supH + 6;
+
+      // ── Line items table ─────────────────────────────────────
+      const cols = [
+        { label:'#',          w:20,  align:'center' },
+        { label:'Description',w:225, align:'left' },
+        { label:'Qty',        w:35,  align:'center' },
+        { label:'Unit Price', w:65,  align:'right' },
+        { label:'Discount',   w:50,  align:'center' },
+        { label:'Total',      w:65,  align:'right' },
+      ];
+      const tableW = cols.reduce((s,c)=>s+c.w,0);
+      const rowH = 16;
+      const hdrH2 = 18;
+
+      // Table header
+      page.drawRectangle({ x:ml, y:y-hdrH2, width:tableW, height:hdrH2, color:rgb(0.2,0.2,0.2) });
+      let cx = ml;
+      cols.forEach(col => {
+        const tw = fontB.widthOfTextAtSize(col.label, 7);
+        const tx = col.align==='center' ? cx+(col.w-tw)/2 : col.align==='right' ? cx+col.w-tw-3 : cx+3;
+        page.drawText(col.label, { x:tx, y:y-13, font:fontB, size:7, color:rgb(1,1,1) });
+        cx += col.w;
+      });
+      y -= hdrH2;
+
+      // Table rows
+      pageItems.forEach((item, idx) => {
+        const bg = idx%2===0 ? rgb(1,1,1) : rgb(0.96,0.96,0.96);
+        page.drawRectangle({ x:ml, y:y-rowH, width:tableW, height:rowH, color:bg, borderColor:cLGray, borderWidth:0.3 });
+        const cells = [
+          String(item._globalIdx||idx+1),
+          truncate(item.description||'', fontR, 7.5, 220),
+          String(item.qty||1),
+          fmtCurrency(item.unitPrice, po.currency),
+          '0%',
+          fmtCurrency(item.total, po.currency),
+        ];
+        let cx2 = ml;
+        cols.forEach((col, ci) => {
+          const cellFont = ci===1 ? fontR : fontR;
+          const tw = cellFont.widthOfTextAtSize(cells[ci], 7.5);
+          const tx = col.align==='center' ? cx2+(col.w-tw)/2 : col.align==='right' ? cx2+col.w-tw-3 : cx2+3;
+          page.drawText(cells[ci], { x:tx, y:y-11, font:cellFont, size:7.5, color:cDark });
+          cx2 += col.w;
+        });
+        y -= rowH;
+      });
+
+      y -= 8;
+
+      // ── Totals (last page only) ───────────────────────────────
+      if (pageNum === totalPages) {
+        const totW = 200;
+        const totX = ml + tableW - totW;
+        page.drawLine({ start:{x:ml, y:y}, end:{x:ml+tableW, y:y}, thickness:0.5, color:cLine });
+        y -= 14;
+        const rows2 = [
+          ['Total Líquido / Net Total', fmtCurrency(po.netTotal||0, po.currency)],
+          ['Valor do IVA / VAT Amount', fmtCurrency((po.total||0)-(po.netTotal||0), po.currency)],
+          ['Desconto / Discount', fmtCurrency(0, po.currency)],
+        ];
+        rows2.forEach(([label, val]) => {
+          page.drawText(label, { x:totX, y, font:fontR, size:8, color:cGray });
+          const vw = fontB.widthOfTextAtSize(val, 8);
+          page.drawText(val, { x:ml+tableW-vw-3, y, font:fontB, size:8, color:cDark });
+          y -= 13;
+        });
+        page.drawLine({ start:{x:totX, y:y+2}, end:{x:ml+tableW, y:y+2}, thickness:1, color:cDark });
+        y -= 2;
+        const totalStr = fmtCurrency(po.total||0, po.currency);
+        page.drawText('Total', { x:totX, y, font:fontB, size:10, color:cDark });
+        const tw2 = fontB.widthOfTextAtSize(totalStr, 10);
+        page.drawText(totalStr, { x:ml+tableW-tw2-3, y, font:fontB, size:10, color:cDark });
+        y -= 20;
+
+        // Footer note
+        page.drawLine({ start:{x:ml, y:y}, end:{x:ml+tableW, y:y}, thickness:0.5, color:cLine });
+        y -= 10;
+        page.drawText('As faturas devem mencionar o nº de ordem de compra completa, caso contrário serão devolvidas.', { x:ml, y, font:fontR, size:6.5, color:cGray });
+        y -= 9;
+        page.drawText('Invoices must mention the complete purchase order number, otherwise they will be returned.', { x:ml, y, font:fontR, size:6.5, color:cGray });
+      }
+
+      // Page number
+      const pgStr = `Página ${pageNum} de ${totalPages}`;
+      const pgW = fontR.widthOfTextAtSize(pgStr, 7);
+      page.drawText(pgStr, { x:ml+tableW-pgW, y:15, font:fontR, size:7, color:cGray });
+      page.drawText(compInfo.web, { x:ml, y:15, font:fontR, size:7, color:cGray });
+
+      return page;
+    }
+
+    // Split items across pages (max ~22 rows per page)
+    const ROWS_PER_PAGE = 22;
+    const items = (po.items && po.items.length > 0) ? po.items : [{ description:'(No line items)', qty:1, unitPrice:po.total||0, total:po.total||0 }];
+    const itemsWithIdx = items.map((it,i)=>({...it, _globalIdx:i+1}));
+    const totalPages = Math.ceil(itemsWithIdx.length / ROWS_PER_PAGE);
+    for (let pg = 0; pg < totalPages; pg++) {
+      const pageItems = itemsWithIdx.slice(pg*ROWS_PER_PAGE, (pg+1)*ROWS_PER_PAGE);
+      drawPage(pageItems, pg+1, totalPages);
+    }
   }
 
   const font     = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
