@@ -466,9 +466,11 @@ async function ghFetch() {
 }
 
 async function ghWrite(data, sha) {
+  // Strip ALL binary/large data — PDFs are stored separately in pdfs/ folder
+  const MAX_ARCHIVE = 500; // keep only most recent events
   const clean = {
     users:   data.users,
-    archive: data.archive,
+    archive: (data.archive||[]).slice(0, MAX_ARCHIVE), // limit archive size
     apiKey:  localStorage.getItem('po_tool_apikey') || state.apiKey || '',
     ghToken: localStorage.getItem('po_gh_token') || '',
     pos:     (data.pos||[]).map(po => {
@@ -638,7 +640,7 @@ function saveState() {
 
   // Save to localStorage
   try {
-    const data = { users: state.users, pos: posClean, archive: state.archive, _ghSha: state._ghSha };
+    const data = { users: state.users, pos: posClean, archive: state.archive.slice(0,500), _ghSha: state._ghSha };
     const json = JSON.stringify(data);
     if (json.length > 4000000) {
       console.warn('[Save] localStorage data very large:', json.length, 'chars — may fail');
