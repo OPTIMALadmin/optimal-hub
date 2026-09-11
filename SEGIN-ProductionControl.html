@@ -833,18 +833,24 @@
     if (typeof v === 'string'){
       const s = v.trim();
       if (!s) return null;
-      // try native parse first
-      let d = new Date(s);
-      if (!isNaN(d.getTime())) return d;
-      // try DD-MM-YYYY HH:mm:ss or DD/MM/YYYY
+      // Try DD/MM/YYYY or DD-MM-YYYY (with optional time) FIRST — this is
+      // the format SEGIN exports use. Native Date parsing must NOT run
+      // first: for an ambiguous string like "10/09/2026" (day <= 12), the
+      // browser's built-in parser silently guesses the US convention
+      // (MM/DD/YYYY = October 9th) instead of throwing, which would mean
+      // the correct DD/MM/YYYY fallback below never even runs.
       const m = s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})[ T]?(\d{1,2}:\d{2}(:\d{2})?)?/);
       if (m){
         let [_, dd, mm, yy, hms] = m;
         if (yy.length === 2) yy = '20'+yy;
         const timePart = hms || '00:00:00';
-        d = new Date(Date.UTC(+yy, +mm-1, +dd, ...timePart.split(':').map(Number)));
+        const d = new Date(Date.UTC(+yy, +mm-1, +dd, ...timePart.split(':').map(Number)));
         if (!isNaN(d.getTime())) return d;
       }
+      // fallback: native parse (handles ISO strings like "2026-09-10..." —
+      // those don't match the pattern above since the year isn't first)
+      const d = new Date(s);
+      if (!isNaN(d.getTime())) return d;
       return null;
     }
     return null;
