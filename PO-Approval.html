@@ -2252,8 +2252,6 @@ async function approvePO(po) {
     const req = state.users.find(x => x.id === po.requestedBy);
     const approverLogins = getApproverLogins(po.company, po.approvalLevel);
     const allApprovers   = getUsersByLogins(approverLogins);
-
-    // Collect all unique recipients (requester + all approvers)
     const recipients = [];
     if (req) recipients.push(req);
     allApprovers.forEach(a => { if (!recipients.find(r => r.id === a.id)) recipients.push(a); });
@@ -2278,13 +2276,32 @@ ${isRequester ? `\nThe approved PO with APPROVED watermark is ready for download
       sendEmail(recipient.email, `✅ PO Approved: ${po.poNumber||po.id}`, msg, po.id);
     });
 
+    // Save locally first
     saveState();
-    toast(`PO fully approved! Confirmation sent to ${recipients.length} recipient(s).`);
+
+    // Await GitHub push — critical that approval status is saved
+    if (ghConfigured()) {
+      const ok = await ghPush();
+      if (ok) {
+        toast(`PO fully approved and saved ✓ Confirmation sent to ${recipients.length} recipient(s).`);
+      } else {
+        // Retry once
+        toast('Saving approval to GitHub… retrying…', 'error', 3000);
+        await new Promise(r => setTimeout(r, 1000));
+        const ok2 = await ghPush();
+        if (ok2) {
+          toast(`PO approved and saved ✓ (retry succeeded)`);
+        } else {
+          toast(`⚠ PO approved locally but GitHub save failed (${state._ghError||'unknown'}). Please click SYNC to retry.`, 'error', 10000);
+        }
+      }
+    } else {
+      toast(`PO fully approved! Confirmation sent to ${recipients.length} recipient(s).`);
+    }
   } else {
-    // Partial approval — notify remaining approvers in the same group
+    // Partial approval — notify remaining approvers
     const groups   = getApprovalGroups(po.company, po.approvalLevel);
     const approvedBy = po.approvals;
-    // Find groups where this user's approval made progress (they're in the group)
     groups.filter(g => g.includes(u.login)).forEach(g => {
       const remaining = g.filter(l => !approvedBy.includes(l));
       remaining.forEach(login => {
@@ -2306,13 +2323,28 @@ Please log in to the PO Approval Tool to complete the approval.
         }
       });
     });
+
+    // Save locally first
     saveState();
-    toast(`Your approval recorded. Waiting for remaining approvers.`);
+
+    // Await GitHub push for partial approval too
+    if (ghConfigured()) {
+      const ok = await ghPush();
+      if (ok) {
+        toast(`Your approval recorded and saved ✓ Waiting for remaining approvers.`);
+      } else {
+        const ok2 = await ghPush();
+        if (!ok2) toast(`⚠ Approval recorded locally but GitHub save failed. Please click SYNC to retry.`, 'error', 10000);
+        else toast(`Your approval recorded ✓ Waiting for remaining approvers.`);
+      }
+    } else {
+      toast(`Your approval recorded. Waiting for remaining approvers.`);
+    }
   }
   render();
 }
 
-function rejectPO(po, reason) {
+async function rejectPO(po, reason) {
   const u=state.currentUser;
   po.status='rejected'; po.rejectedBy=u.id; po.rejectedAt=new Date().toISOString(); po.rejectionReason=reason;
   addEvent('rejected', po.id, u.id, `Rejected by ${u.name}. Reason: ${reason}`);
@@ -2338,7 +2370,14 @@ Please review the PO and resubmit if applicable.
 — PO Approval Tool · OPTIMAL`;
     sendEmail(req.email, `❌ PO Not Approved: ${po.poNumber||po.id}`, msg, po.id);
   }
-  saveState(); state.modal=null; toast('PO rejected.','error'); render();
+  saveState();
+  state.modal=null;
+  if (ghConfigured()) {
+    const ok = await ghPush();
+    if (!ok) await ghPush(); // retry once
+  }
+  toast('PO rejected.','error');
+  render();
 }
 
 // ============================================================
