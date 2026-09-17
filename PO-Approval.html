@@ -527,7 +527,7 @@ async function ghWrite(data, sha) {
     const blob = await blobRes.json();
     if (!blob.sha) { state._ghError = 'Blob creation failed: ' + JSON.stringify(blob); return false; }
 
-    // Step 2: Get current commit to use as base
+    // Step 2: Get current commit SHA (fresh fetch to avoid stale SHA)
     const refRes = await fetch(`https://api.github.com/repos/${c.owner}/${c.repo}/git/refs/heads/${c.branch}`, { headers });
     const ref = await refRes.json();
     const parentSha = ref.object?.sha;
@@ -541,7 +541,7 @@ async function ghWrite(data, sha) {
     const tree = await treeRes.json();
     if (!tree.sha) { state._ghError = 'Tree creation failed'; return false; }
 
-    // Step 4: Create commit
+    // Step 4: Create commit using latest parent
     const commitRes = await fetch(`https://api.github.com/repos/${c.owner}/${c.repo}/git/commits`, {
       method: 'POST', headers,
       body: JSON.stringify({ message: `PO data update — ${new Date().toISOString()}`, tree: tree.sha, parents: [parentSha] })
@@ -549,13 +549,17 @@ async function ghWrite(data, sha) {
     const commit = await commitRes.json();
     if (!commit.sha) { state._ghError = 'Commit creation failed'; return false; }
 
-    // Step 5: Update ref
+    // Step 5: Update ref — fetch latest ref SHA first to avoid conflicts
+    const latestRefRes = await fetch(`https://api.github.com/repos/${c.owner}/${c.repo}/git/refs/heads/${c.branch}`, { headers });
+    const latestRef = await latestRefRes.json();
+    const latestSha = latestRef.object?.sha;
+
     const updateRes = await fetch(`https://api.github.com/repos/${c.owner}/${c.repo}/git/refs/heads/${c.branch}`, {
       method: 'PATCH', headers,
-      body: JSON.stringify({ sha: commit.sha })
+      body: JSON.stringify({ sha: commit.sha, force: true })
     });
     const updated = await updateRes.json();
-    if (!updated.object?.sha) { state._ghError = 'Ref update failed'; return false; }
+    if (!updated.object?.sha) { state._ghError = 'Ref update failed: ' + JSON.stringify(updated); return false; }
 
     state._ghSha = updated.object.sha;
     state._ghError = null;
