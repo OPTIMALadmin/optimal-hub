@@ -3588,6 +3588,19 @@ function renderAnalytics() {
       return td;
     }
 
+    function makeCell(content, style='') {
+      const td = document.createElement('td');
+      if (style) td.style.cssText = style;
+      td.innerHTML = content;
+      return td;
+    }
+
+    function makeRow(cells) {
+      const tr = document.createElement('tr');
+      cells.forEach(c => tr.appendChild(c));
+      return tr;
+    }
+
     // ── Company table ──────────────────────────────────────────
     compCard.innerHTML = `<div style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;color:var(--cyan);margin-bottom:14px">By Company — Detail</div>`;
     const compTable = document.createElement('div'); compTable.className='table-wrap';
@@ -3595,18 +3608,23 @@ function renderAnalytics() {
     ct.innerHTML = `<thead><tr><th>Company</th><th style="text-align:right"># POs</th><th style="text-align:right">Total Value</th><th style="text-align:right">Approved</th><th style="text-align:right">Pending</th></tr></thead>`;
     const ctb = document.createElement('tbody');
     companyEntries.forEach(([company,d]) => {
-      const tr = document.createElement('tr');
       const compPos = filtered.filter(p=>normaliseCompany(p.company)===normaliseCompany(company));
-      tr.innerHTML = `<td style="font-weight:600">${esc(company)}</td>`;
-      tr.appendChild(countCell(company, compPos));
-      tr.innerHTML += `<td style="text-align:right;font-weight:700;color:var(--cyan)">€${d.total.toLocaleString('pt-PT',{minimumFractionDigits:2,maximumFractionDigits:2})}</td><td style="text-align:right;color:var(--green)">€${d.approved.toLocaleString('pt-PT',{minimumFractionDigits:2,maximumFractionDigits:2})}</td><td style="text-align:right;color:var(--amber)">€${d.pending.toLocaleString('pt-PT',{minimumFractionDigits:2,maximumFractionDigits:2})}</td>`;
-      ctb.appendChild(tr);
+      ctb.appendChild(makeRow([
+        makeCell(`<strong>${esc(company)}</strong>`),
+        countCell(company, compPos),
+        makeCell(`€${d.total.toLocaleString('pt-PT',{minimumFractionDigits:2,maximumFractionDigits:2})}`, 'text-align:right;font-weight:700;color:var(--cyan)'),
+        makeCell(`€${d.approved.toLocaleString('pt-PT',{minimumFractionDigits:2,maximumFractionDigits:2})}`, 'text-align:right;color:var(--green)'),
+        makeCell(`€${d.pending.toLocaleString('pt-PT',{minimumFractionDigits:2,maximumFractionDigits:2})}`, 'text-align:right;color:var(--amber)'),
+      ]));
     });
-    const totalRow = document.createElement('tr');
-    totalRow.style.cssText='border-top:2px solid var(--border);font-weight:800';
-    totalRow.innerHTML=`<td>TOTAL</td>`;
-    totalRow.appendChild(countCell('All Companies', filtered));
-    totalRow.innerHTML+=`<td style="text-align:right;color:var(--cyan)">€${total.toLocaleString('pt-PT',{minimumFractionDigits:2,maximumFractionDigits:2})}</td><td style="text-align:right;color:var(--green)">€${approved.reduce((s,p)=>s+(p.total||0),0).toLocaleString('pt-PT',{minimumFractionDigits:2,maximumFractionDigits:2})}</td><td style="text-align:right;color:var(--amber)">€${pending.reduce((s,p)=>s+(p.total||0),0).toLocaleString('pt-PT',{minimumFractionDigits:2,maximumFractionDigits:2})}</td>`;
+    const totalRow = makeRow([
+      makeCell('<strong>TOTAL</strong>'),
+      countCell('All Companies', filtered),
+      makeCell(`€${total.toLocaleString('pt-PT',{minimumFractionDigits:2,maximumFractionDigits:2})}`, 'text-align:right;color:var(--cyan);font-weight:800'),
+      makeCell(`€${approved.reduce((s,p)=>s+(p.total||0),0).toLocaleString('pt-PT',{minimumFractionDigits:2,maximumFractionDigits:2})}`, 'text-align:right;color:var(--green);font-weight:800'),
+      makeCell(`€${pending.reduce((s,p)=>s+(p.total||0),0).toLocaleString('pt-PT',{minimumFractionDigits:2,maximumFractionDigits:2})}`, 'text-align:right;color:var(--amber);font-weight:800'),
+    ]);
+    totalRow.style.borderTop = '2px solid var(--border)';
     ctb.appendChild(totalRow);
     ct.appendChild(ctb); compTable.appendChild(ct); compCard.appendChild(compTable);
     tablesEl.appendChild(compCard);
@@ -3625,11 +3643,12 @@ function renderAnalytics() {
         const dd = new Date(p.createdAt||p.requestedAt||Date.now());
         return `${dd.getFullYear()}-${String(dd.getMonth()+1).padStart(2,'0')}` === month;
       });
-      const tr = document.createElement('tr');
-      tr.innerHTML=`<td style="font-weight:600">${label}</td>`;
-      tr.appendChild(countCell(label, monthPos));
-      tr.innerHTML+=`<td style="text-align:right;font-weight:700;color:var(--cyan)">€${d.total.toLocaleString('pt-PT',{minimumFractionDigits:2,maximumFractionDigits:2})}</td><td style="text-align:right;color:var(--green)">€${d.approved.toLocaleString('pt-PT',{minimumFractionDigits:2,maximumFractionDigits:2})}</td>`;
-      mtb.appendChild(tr);
+      mtb.appendChild(makeRow([
+        makeCell(`<strong>${label}</strong>`),
+        countCell(label, monthPos),
+        makeCell(`€${d.total.toLocaleString('pt-PT',{minimumFractionDigits:2,maximumFractionDigits:2})}`, 'text-align:right;font-weight:700;color:var(--cyan)'),
+        makeCell(`€${d.approved.toLocaleString('pt-PT',{minimumFractionDigits:2,maximumFractionDigits:2})}`, 'text-align:right;color:var(--green)'),
+      ]));
     });
     mtt.appendChild(mtb); mt.appendChild(mtt); monthCard.appendChild(mt);
     tablesEl.appendChild(monthCard);
@@ -3643,11 +3662,12 @@ function renderAnalytics() {
     const ptb = document.createElement('tbody');
     projectEntries.forEach(([project,d]) => {
       const projPos = filtered.filter(p=>(p.project||'— No project —')===project);
-      const tr = document.createElement('tr');
-      tr.innerHTML=`<td style="font-weight:600">${esc(project)}</td>`;
-      tr.appendChild(countCell(project, projPos));
-      tr.innerHTML+=`<td style="text-align:right;font-weight:700;color:var(--cyan)">€${d.total.toLocaleString('pt-PT',{minimumFractionDigits:2,maximumFractionDigits:2})}</td><td style="text-align:right;color:var(--text2)">${total>0?(d.total/total*100).toFixed(1):0}%</td>`;
-      ptb.appendChild(tr);
+      ptb.appendChild(makeRow([
+        makeCell(`<strong>${esc(project)}</strong>`),
+        countCell(project, projPos),
+        makeCell(`€${d.total.toLocaleString('pt-PT',{minimumFractionDigits:2,maximumFractionDigits:2})}`, 'text-align:right;font-weight:700;color:var(--cyan)'),
+        makeCell(`${total>0?(d.total/total*100).toFixed(1):0}%`, 'text-align:right;color:var(--text2)'),
+      ]));
     });
     ptt.appendChild(ptb); pt.appendChild(ptt); projCard.appendChild(pt);
     tablesEl.appendChild(projCard);
