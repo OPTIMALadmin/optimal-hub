@@ -1538,7 +1538,10 @@ function viewPO(id) { state.page='po-detail'; state.currentPO=id; render(); }
 // ============================================================
 function renderPOList() {
   const u=state.currentUser, isAdmin=u.role==='admin';
-  const myPOs = isAdmin ? state.pos.filter(p=>p.status!=='deleted') : state.pos.filter(p=>p.requestedBy===u.id&&p.status!=='deleted');
+  const myPOs = isAdmin ? state.pos.filter(p=>p.status!=='deleted') : state.pos.filter(p=>p.status!=='deleted' && (
+    p.requestedBy===u.id ||
+    (u.visibleCompanies||[]).includes(normaliseCompany(p.company))
+  ));
   const div = document.createElement('div');
   div.innerHTML=`<div class="page-header"><h2>Purchase Orders</h2><p>${isAdmin?'All POs in the system':'Your submitted POs'}</p></div>`;
   const card=document.createElement('div'); card.className='card'; card.style.padding='0';
@@ -2677,7 +2680,7 @@ function renderUsers() {
           <input id="email-${u.id}" type="email" value="${esc(u.email)}" placeholder="user@company.com">
         </div>
       </div>
-      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:10px">
         <select id="lvl-${u.id}" style="font-size:12px;padding:6px 10px;width:auto">
           <option value="">No approval</option>
           <option value="1"     ${u.levels?.join(',')===('1')    ?'selected':''}>L1 only</option>
@@ -2689,7 +2692,25 @@ function renderUsers() {
         </select>
         <button class="btn btn-outline btn-sm" onclick="saveUserDetails('${u.id}')">Save</button>
         ${u.login!=='admin'?`<button class="btn btn-sm" style="background:var(--red-bg);color:var(--red);border:1px solid var(--red-light)" onclick="removeUser('${u.id}','${esc(u.name)}')">Remove</button>`:''}
-      </div>`;
+      </div>
+      ${u.login!=='admin'?`
+      <div style="border-top:1px solid var(--border);padding-top:10px">
+        <div style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:0.1em;color:var(--text3);margin-bottom:8px">Company Visibility — POs visible in My POs</div>
+        <div style="display:flex;flex-wrap:wrap;gap:8px">
+          ${COMPANIES.map(c=>{
+            const norm = normaliseCompany(c);
+            const hasAccess = (u.visibleCompanies||[]).includes(norm);
+            return `<label style="display:flex;align-items:center;gap:6px;font-size:11px;cursor:pointer;padding:4px 8px;border-radius:3px;border:1px solid ${hasAccess?'var(--cyan-border)':'var(--border)'};background:${hasAccess?'var(--cyan-dim)':'var(--surface2)'}">
+              <input type="checkbox" id="vc-${u.id}-${norm.replace(/\s+/g,'_')}" ${hasAccess?'checked':''} style="cursor:pointer">
+              ${esc(c)}
+            </label>`;
+          }).join('')}
+        </div>
+        <div style="margin-top:8px">
+          <button class="btn btn-outline btn-sm" onclick="saveUserDetails('${u.id}')">Save Visibility</button>
+        </div>
+      </div>`:''}
+      `;
     listCard.appendChild(row);
   });
   div.appendChild(listCard); return div;
@@ -2711,9 +2732,17 @@ async function saveUserDetails(uid) {
   u.email  = newEmail;
   if (sel) u.levels = sel.value ? sel.value.split(',').map(Number) : [];
 
+  // Read company visibility checkboxes
+  if (u.login !== 'admin') {
+    u.visibleCompanies = COMPANIES
+      .map(c => normaliseCompany(c))
+      .filter(norm => document.getElementById(`vc-${uid}-${norm.replace(/\s+/g,'_')}`)?.checked);
+  }
+
   if (state.currentUser?.id === uid) {
     state.currentUser.login = u.login;
     state.currentUser.email = u.email;
+    state.currentUser.visibleCompanies = u.visibleCompanies;
   }
 
   // Save locally first
