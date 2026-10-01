@@ -3434,6 +3434,13 @@ function renderAnalytics() {
   function renderAll() {
     const filtered = getFiltered();
     const net = p => p.netTotal||0; // always use net value
+
+    // Summary cards always show ALL POs (ignoring status filter) for full picture
+    const allPos = pos; // pos already excludes draft/deleted
+    const allApproved = allPos.filter(p=>p.status==='approved');
+    const allPending  = allPos.filter(p=>p.status==='pending');
+    const allTotal    = allPos.reduce((s,p)=>s+net(p),0);
+
     const total    = filtered.reduce((s,p) => s + net(p), 0);
     const approved = filtered.filter(p=>p.status==='approved');
     const pending  = filtered.filter(p=>p.status==='pending');
@@ -3442,20 +3449,20 @@ function renderAnalytics() {
     summaryEl.innerHTML = `
       <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:20px">
         <div class="card" style="padding:18px;text-align:center">
-          <div style="font-size:24px;font-weight:800;color:var(--cyan)">${filtered.length}</div>
+          <div style="font-size:24px;font-weight:800;color:var(--cyan)">${allPos.length}</div>
           <div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:0.08em;margin-top:4px">Total POs</div>
         </div>
         <div class="card" style="padding:18px;text-align:center">
-          <div style="font-size:24px;font-weight:800;color:var(--text)">€${total.toLocaleString('pt-PT',{minimumFractionDigits:2,maximumFractionDigits:2})}</div>
+          <div style="font-size:24px;font-weight:800;color:var(--text)">€${allTotal.toLocaleString('pt-PT',{minimumFractionDigits:2,maximumFractionDigits:2})}</div>
           <div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:0.08em;margin-top:4px">Net Total Value</div>
         </div>
         <div class="card" style="padding:18px;text-align:center">
-          <div style="font-size:24px;font-weight:800;color:var(--green)">${approved.length}</div>
-          <div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:0.08em;margin-top:4px">Approved (€${approved.reduce((s,p)=>s+net(p),0).toLocaleString('pt-PT',{minimumFractionDigits:0,maximumFractionDigits:0})})</div>
+          <div style="font-size:24px;font-weight:800;color:var(--green)">${allApproved.length}</div>
+          <div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:0.08em;margin-top:4px">Approved (€${allApproved.reduce((s,p)=>s+net(p),0).toLocaleString('pt-PT',{minimumFractionDigits:0,maximumFractionDigits:0})})</div>
         </div>
         <div class="card" style="padding:18px;text-align:center">
-          <div style="font-size:24px;font-weight:800;color:var(--amber)">${pending.length}</div>
-          <div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:0.08em;margin-top:4px">Pending (€${pending.reduce((s,p)=>s+net(p),0).toLocaleString('pt-PT',{minimumFractionDigits:0,maximumFractionDigits:0})})</div>
+          <div style="font-size:24px;font-weight:800;color:var(--amber)">${allPending.length}</div>
+          <div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:0.08em;margin-top:4px">Pending (€${allPending.reduce((s,p)=>s+net(p),0).toLocaleString('pt-PT',{minimumFractionDigits:0,maximumFractionDigits:0})})</div>
         </div>
       </div>`;
 
