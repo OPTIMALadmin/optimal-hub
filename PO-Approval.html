@@ -2445,12 +2445,21 @@ function renderArchive() {
       poMap[ev.poId].push(ev);
     });
 
-    // Build PO rows — sorted by most recent event first
-    let rows = Object.entries(poMap).map(([poId, events]) => {
+    // Build PO rows from ALL POs in state.pos — not just ones with archive events
+    // This ensures POs whose archive events were trimmed still appear
+    const allPoIds = new Set([
+      ...Object.keys(poMap),
+      ...state.pos.filter(p=>p.status!=='deleted').map(p=>p.id)
+    ]);
+
+    let rows = [...allPoIds].map(poId => {
       const po = state.pos.find(p=>p.id===poId);
-      const latest = events[0];
+      const events = poMap[poId] || [];
+      // Use PO creation date as fallback when no events
+      const latest = events[0] || { ts: po?.createdAt||po?.requestedAt||new Date(0).toISOString(), type:'created', message:'(no archive events)' };
       return { poId, po, events, latest };
-    }).sort((a,b) => new Date(b.latest.ts) - new Date(a.latest.ts));
+    }).filter(r => r.po) // only show POs that exist in state.pos
+      .sort((a,b) => new Date(b.latest.ts) - new Date(a.latest.ts));
 
     // Apply filters
     if (company !== 'all') rows = rows.filter(r => normaliseCompany(r.po?.company||'') === company);
