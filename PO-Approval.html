@@ -3364,7 +3364,7 @@ function renderAnalytics() {
   const div = document.createElement('div');
   div.innerHTML = `<div class="page-header"><h2>Data Analysis</h2><p>Purchase order values by company, month and project — approved and pending POs</p></div>`;
 
-  const pos = state.pos.filter(p => p.status !== 'draft' && p.status !== 'deleted');
+  const pos = state.pos.filter(p => p.status !== 'draft' && p.status !== 'deleted' && p.status !== 'rejected');
   if (!pos.length) {
     div.innerHTML += `<div class="card" style="text-align:center;padding:48px;color:var(--text3)">No PO data available yet.</div>`;
     return div;
@@ -3386,9 +3386,10 @@ function renderAnalytics() {
       <div class="form-group" style="margin:0;min-width:160px">
         <label>Status</label>
         <select id="an-status">
-          <option value="all">All statuses</option>
-          <option value="approved">Approved only</option>
+          <option value="approved" selected>Approved only</option>
+          <option value="all">All (excl. draft &amp; rejected)</option>
           <option value="pending">Pending only</option>
+          <option value="rejected">Rejected only</option>
         </select>
       </div>
       <div class="form-group" style="margin:0;min-width:200px">
@@ -3416,11 +3417,14 @@ function renderAnalytics() {
   // ── Render function ──────────────────────────────────────
   function getFiltered() {
     let filtered = [...pos];
-    const year    = document.getElementById('an-year')?.value;
-    const status  = document.getElementById('an-status')?.value;
-    const company = document.getElementById('an-company')?.value;
-    if (year !== 'all')    filtered = filtered.filter(p => new Date(p.createdAt||p.requestedAt||Date.now()).getFullYear() == year);
-    if (status !== 'all')  filtered = filtered.filter(p => p.status === status);
+    const year    = document.getElementById('an-year')?.value    || 'all';
+    const status  = document.getElementById('an-status')?.value  || 'approved';
+    const company = document.getElementById('an-company')?.value || 'all';
+    if (year !== 'all')     filtered = filtered.filter(p => new Date(p.createdAt||p.requestedAt||Date.now()).getFullYear() == year);
+    if (status === 'approved') filtered = filtered.filter(p => p.status === 'approved');
+    else if (status === 'pending')  filtered = filtered.filter(p => p.status === 'pending');
+    else if (status === 'rejected') filtered = filtered.filter(p => p.status === 'rejected');
+    // 'all' = show everything in pos (already excludes draft/deleted/rejected from initial filter)
     if (company !== 'all') filtered = filtered.filter(p => normaliseCompany(p.company) === normaliseCompany(company));
     return filtered;
   }
@@ -3536,63 +3540,118 @@ function renderAnalytics() {
 
     // Company table
     const compCard = document.createElement('div'); compCard.className='card'; compCard.style.marginBottom='20px';
-    compCard.innerHTML=`<div style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;color:var(--cyan);margin-bottom:14px">By Company — Detail</div>
-    <div class="table-wrap"><table>
-      <thead><tr><th>Company</th><th style="text-align:right"># POs</th><th style="text-align:right">Total Value</th><th style="text-align:right">Approved</th><th style="text-align:right">Pending</th></tr></thead>
-      <tbody>
-        ${companyEntries.map(([company,d])=>`<tr>
-          <td style="font-weight:600">${esc(company)}</td>
-          <td style="text-align:right">${d.count}</td>
-          <td style="text-align:right;font-weight:700;color:var(--cyan)">€${d.total.toLocaleString('pt-PT',{minimumFractionDigits:2,maximumFractionDigits:2})}</td>
-          <td style="text-align:right;color:var(--green)">€${d.approved.toLocaleString('pt-PT',{minimumFractionDigits:2,maximumFractionDigits:2})}</td>
-          <td style="text-align:right;color:var(--amber)">€${d.pending.toLocaleString('pt-PT',{minimumFractionDigits:2,maximumFractionDigits:2})}</td>
-        </tr>`).join('')}
-        <tr style="border-top:2px solid var(--border);font-weight:800">
-          <td>TOTAL</td>
-          <td style="text-align:right">${filtered.length}</td>
-          <td style="text-align:right;color:var(--cyan)">€${total.toLocaleString('pt-PT',{minimumFractionDigits:2,maximumFractionDigits:2})}</td>
-          <td style="text-align:right;color:var(--green)">€${approved.reduce((s,p)=>s+(p.total||0),0).toLocaleString('pt-PT',{minimumFractionDigits:2,maximumFractionDigits:2})}</td>
-          <td style="text-align:right;color:var(--amber)">€${pending.reduce((s,p)=>s+(p.total||0),0).toLocaleString('pt-PT',{minimumFractionDigits:2,maximumFractionDigits:2})}</td>
-        </tr>
-      </tbody>
-    </table></div>`;
+    // ── Drilldown panel ────────────────────────────────────────
+    const drillPanel = document.createElement('div');
+    drillPanel.id = 'an-drill';
+    drillPanel.style.cssText = 'display:none;margin-bottom:20px';
+
+    function showDrilldown(title, pos) {
+      drillPanel.style.display = 'block';
+      drillPanel.innerHTML = `
+        <div class="card">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
+            <div style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;color:var(--cyan)">
+              ${esc(title)} — ${pos.length} PO${pos.length!==1?'s':''}
+            </div>
+            <button class="btn btn-outline btn-sm" onclick="document.getElementById('an-drill').style.display='none'">✕ Close</button>
+          </div>
+          <div class="table-wrap"><table>
+            <thead><tr>
+              <th>PO Number</th><th>Supplier</th><th>Project</th>
+              <th style="text-align:right">Amount</th><th>Status</th><th>Date</th><th></th>
+            </tr></thead>
+            <tbody>
+              ${pos.sort((a,b)=>(b.total||0)-(a.total||0)).map(p=>`<tr>
+                <td style="font-weight:700;font-family:monospace">${esc(p.poNumber||p.id)}</td>
+                <td>${esc(p.supplier||'—')}</td>
+                <td style="color:var(--text3)">${esc(p.project||'—')}</td>
+                <td style="text-align:right;font-weight:700;color:var(--cyan)">€${(p.total||0).toLocaleString('pt-PT',{minimumFractionDigits:2,maximumFractionDigits:2})}</td>
+                <td><span style="font-size:10px;font-weight:700;text-transform:uppercase;padding:2px 7px;border-radius:3px;background:${p.status==='approved'?'var(--green-dim)':p.status==='pending'?'var(--amber-dim)':'var(--surface3)'};color:${p.status==='approved'?'var(--green)':p.status==='pending'?'var(--amber)':'var(--text3)'}">${p.status}</span></td>
+                <td style="color:var(--text3);white-space:nowrap">${fmtDate(p.approvedAt||p.requestedAt||p.createdAt)}</td>
+                <td><button class="btn btn-outline btn-sm" onclick="viewPO('${p.id}')">View →</button></td>
+              </tr>`).join('')}
+            </tbody>
+          </table></div>
+        </div>`;
+      drillPanel.scrollIntoView({ behavior:'smooth', block:'start' });
+    }
+
+    function countCell(label, pos) {
+      const td = document.createElement('td');
+      td.style.cssText = 'text-align:right';
+      const btn = document.createElement('button');
+      btn.style.cssText = 'background:none;border:none;color:var(--cyan);font-weight:700;cursor:pointer;font-size:inherit;font-family:inherit;text-decoration:underline;padding:0';
+      btn.textContent = pos.length;
+      btn.title = `Click to see ${pos.length} PO${pos.length!==1?'s':''}`;
+      btn.onclick = () => showDrilldown(label, pos);
+      td.appendChild(btn);
+      return td;
+    }
+
+    // ── Company table ──────────────────────────────────────────
+    compCard.innerHTML = `<div style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;color:var(--cyan);margin-bottom:14px">By Company — Detail</div>`;
+    const compTable = document.createElement('div'); compTable.className='table-wrap';
+    const ct = document.createElement('table');
+    ct.innerHTML = `<thead><tr><th>Company</th><th style="text-align:right"># POs</th><th style="text-align:right">Total Value</th><th style="text-align:right">Approved</th><th style="text-align:right">Pending</th></tr></thead>`;
+    const ctb = document.createElement('tbody');
+    companyEntries.forEach(([company,d]) => {
+      const tr = document.createElement('tr');
+      const compPos = filtered.filter(p=>normaliseCompany(p.company)===normaliseCompany(company));
+      tr.innerHTML = `<td style="font-weight:600">${esc(company)}</td>`;
+      tr.appendChild(countCell(company, compPos));
+      tr.innerHTML += `<td style="text-align:right;font-weight:700;color:var(--cyan)">€${d.total.toLocaleString('pt-PT',{minimumFractionDigits:2,maximumFractionDigits:2})}</td><td style="text-align:right;color:var(--green)">€${d.approved.toLocaleString('pt-PT',{minimumFractionDigits:2,maximumFractionDigits:2})}</td><td style="text-align:right;color:var(--amber)">€${d.pending.toLocaleString('pt-PT',{minimumFractionDigits:2,maximumFractionDigits:2})}</td>`;
+      ctb.appendChild(tr);
+    });
+    const totalRow = document.createElement('tr');
+    totalRow.style.cssText='border-top:2px solid var(--border);font-weight:800';
+    totalRow.innerHTML=`<td>TOTAL</td>`;
+    totalRow.appendChild(countCell('All Companies', filtered));
+    totalRow.innerHTML+=`<td style="text-align:right;color:var(--cyan)">€${total.toLocaleString('pt-PT',{minimumFractionDigits:2,maximumFractionDigits:2})}</td><td style="text-align:right;color:var(--green)">€${approved.reduce((s,p)=>s+(p.total||0),0).toLocaleString('pt-PT',{minimumFractionDigits:2,maximumFractionDigits:2})}</td><td style="text-align:right;color:var(--amber)">€${pending.reduce((s,p)=>s+(p.total||0),0).toLocaleString('pt-PT',{minimumFractionDigits:2,maximumFractionDigits:2})}</td>`;
+    ctb.appendChild(totalRow);
+    ct.appendChild(ctb); compTable.appendChild(ct); compCard.appendChild(compTable);
     tablesEl.appendChild(compCard);
 
-    // Month table
+    // ── Month table ────────────────────────────────────────────
     const monthCard = document.createElement('div'); monthCard.className='card'; monthCard.style.marginBottom='20px';
-    monthCard.innerHTML=`<div style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;color:var(--cyan);margin-bottom:14px">By Month — Detail</div>
-    <div class="table-wrap"><table>
-      <thead><tr><th>Month</th><th style="text-align:right"># POs</th><th style="text-align:right">Total Value</th><th style="text-align:right">Approved Value</th></tr></thead>
-      <tbody>
-        ${monthEntries.map(([month,d])=>{
-          const [yr,mo] = month.split('-');
-          const label = new Date(yr,mo-1,1).toLocaleString('en-GB',{month:'long',year:'numeric'});
-          return `<tr>
-            <td style="font-weight:600">${label}</td>
-            <td style="text-align:right">${d.count}</td>
-            <td style="text-align:right;font-weight:700;color:var(--cyan)">€${d.total.toLocaleString('pt-PT',{minimumFractionDigits:2,maximumFractionDigits:2})}</td>
-            <td style="text-align:right;color:var(--green)">€${d.approved.toLocaleString('pt-PT',{minimumFractionDigits:2,maximumFractionDigits:2})}</td>
-          </tr>`;
-        }).join('')}
-      </tbody>
-    </table></div>`;
+    monthCard.innerHTML=`<div style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;color:var(--cyan);margin-bottom:14px">By Month — Detail</div>`;
+    const mt = document.createElement('div'); mt.className='table-wrap';
+    const mtt = document.createElement('table');
+    mtt.innerHTML=`<thead><tr><th>Month</th><th style="text-align:right"># POs</th><th style="text-align:right">Total Value</th><th style="text-align:right">Approved Value</th></tr></thead>`;
+    const mtb = document.createElement('tbody');
+    monthEntries.forEach(([month,d]) => {
+      const [yr,mo] = month.split('-');
+      const label = new Date(yr,mo-1,1).toLocaleString('en-GB',{month:'long',year:'numeric'});
+      const monthPos = filtered.filter(p => {
+        const dd = new Date(p.createdAt||p.requestedAt||Date.now());
+        return `${dd.getFullYear()}-${String(dd.getMonth()+1).padStart(2,'0')}` === month;
+      });
+      const tr = document.createElement('tr');
+      tr.innerHTML=`<td style="font-weight:600">${label}</td>`;
+      tr.appendChild(countCell(label, monthPos));
+      tr.innerHTML+=`<td style="text-align:right;font-weight:700;color:var(--cyan)">€${d.total.toLocaleString('pt-PT',{minimumFractionDigits:2,maximumFractionDigits:2})}</td><td style="text-align:right;color:var(--green)">€${d.approved.toLocaleString('pt-PT',{minimumFractionDigits:2,maximumFractionDigits:2})}</td>`;
+      mtb.appendChild(tr);
+    });
+    mtt.appendChild(mtb); mt.appendChild(mtt); monthCard.appendChild(mt);
     tablesEl.appendChild(monthCard);
 
-    // Project table
+    // ── Project table ──────────────────────────────────────────
     const projCard = document.createElement('div'); projCard.className='card';
-    projCard.innerHTML=`<div style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;color:var(--cyan);margin-bottom:14px">By Project — Detail</div>
-    <div class="table-wrap"><table>
-      <thead><tr><th>Project</th><th style="text-align:right"># POs</th><th style="text-align:right">Total Value</th><th style="text-align:right">% of Total</th></tr></thead>
-      <tbody>
-        ${projectEntries.map(([project,d])=>`<tr>
-          <td style="font-weight:600">${esc(project)}</td>
-          <td style="text-align:right">${d.count}</td>
-          <td style="text-align:right;font-weight:700;color:var(--cyan)">€${d.total.toLocaleString('pt-PT',{minimumFractionDigits:2,maximumFractionDigits:2})}</td>
-          <td style="text-align:right;color:var(--text2)">${total>0?(d.total/total*100).toFixed(1):0}%</td>
-        </tr>`).join('')}
-      </tbody>
-    </table></div>`;
+    projCard.innerHTML=`<div style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;color:var(--cyan);margin-bottom:14px">By Project — Detail</div>`;
+    const pt = document.createElement('div'); pt.className='table-wrap';
+    const ptt = document.createElement('table');
+    ptt.innerHTML=`<thead><tr><th>Project</th><th style="text-align:right"># POs</th><th style="text-align:right">Total Value</th><th style="text-align:right">% of Total</th></tr></thead>`;
+    const ptb = document.createElement('tbody');
+    projectEntries.forEach(([project,d]) => {
+      const projPos = filtered.filter(p=>(p.project||'— No project —')===project);
+      const tr = document.createElement('tr');
+      tr.innerHTML=`<td style="font-weight:600">${esc(project)}</td>`;
+      tr.appendChild(countCell(project, projPos));
+      tr.innerHTML+=`<td style="text-align:right;font-weight:700;color:var(--cyan)">€${d.total.toLocaleString('pt-PT',{minimumFractionDigits:2,maximumFractionDigits:2})}</td><td style="text-align:right;color:var(--text2)">${total>0?(d.total/total*100).toFixed(1):0}%</td>`;
+      ptb.appendChild(tr);
+    });
+    ptt.appendChild(ptb); pt.appendChild(ptt); projCard.appendChild(pt);
     tablesEl.appendChild(projCard);
+    tablesEl.appendChild(drillPanel);
   }
 
   // Attach filter listeners
