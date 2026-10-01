@@ -3625,12 +3625,14 @@ function renderAnalytics() {
         makeCell(`€${d.pending.toLocaleString('pt-PT',{minimumFractionDigits:2,maximumFractionDigits:2})}`, 'text-align:right;color:var(--amber)'),
       ]));
     });
+    const filteredApprovedNet = filtered.filter(p=>p.status==='approved').reduce((s,p)=>s+net(p),0);
+    const filteredPendingNet  = filtered.filter(p=>p.status==='pending').reduce((s,p)=>s+net(p),0);
     const totalRow = makeRow([
       makeCell('<strong>TOTAL</strong>'),
       countCell('All Companies', filtered),
       makeCell(`€${total.toLocaleString('pt-PT',{minimumFractionDigits:2,maximumFractionDigits:2})}`, 'text-align:right;color:var(--cyan);font-weight:800'),
-      makeCell(`€${approved.reduce((s,p)=>s+(p.total||0),0).toLocaleString('pt-PT',{minimumFractionDigits:2,maximumFractionDigits:2})}`, 'text-align:right;color:var(--green);font-weight:800'),
-      makeCell(`€${pending.reduce((s,p)=>s+(p.total||0),0).toLocaleString('pt-PT',{minimumFractionDigits:2,maximumFractionDigits:2})}`, 'text-align:right;color:var(--amber);font-weight:800'),
+      makeCell(`€${filteredApprovedNet.toLocaleString('pt-PT',{minimumFractionDigits:2,maximumFractionDigits:2})}`, 'text-align:right;color:var(--green);font-weight:800'),
+      makeCell(`€${filteredPendingNet.toLocaleString('pt-PT',{minimumFractionDigits:2,maximumFractionDigits:2})}`, 'text-align:right;color:var(--amber);font-weight:800'),
     ]);
     totalRow.style.borderTop = '2px solid var(--border)';
     ctb.appendChild(totalRow);
