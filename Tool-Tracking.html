@@ -267,19 +267,22 @@ const COLS = ['users','projects','tools','parts','maint'];
 
 // Default accounts — used until the first user record is saved
 const INITIAL_USERS = [
-  { id:'admin', login:'admin', pass:'adminOPTIMAL', name:'Administrator', role:'admin' },
-  { id:'user1', login:'user1', pass:'user1OPTIMAL', name:'User 1',        role:'user'  },
+  { id:'admin', login:'admin', pass:'adminOPTIMAL', name:'Administrator', role:'admin', facilities:['OSS','OHV','OMAR'] },
+  { id:'user1', login:'user1', pass:'user1OPTIMAL', name:'User 1',        role:'user',  facilities:['OSS','OHV','OMAR'] },
+  { id:'userhv',  login:'userhv',  pass:'userHV',  name:'User HV',  role:'user', facilities:['OHV'] },
+  { id:'usermar', login:'usermar', pass:'userMAR', name:'User MAR', role:'user', facilities:['OMAR'] },
 ];
+const FACILITIES = ['OSS','OHV','OMAR'];
 const TOOL_TYPES = ['Mould','Mandrel','Jig / Fixture','Trim tool','Drill template','Press tool','Cutting tool','Other'];
 const MAINT_TYPES = ['Preventive','Corrective','Inspection','Repair','Refurbishment'];
 
-const data = { users:[], projects:[], tools:[], parts:[], maint:[] };
+const data = { users:[], projects:[], tools:[], parts:[], maint:[], seeded:[] };
 const state = {
   ready:false, mode:'connecting', loggedIn:false, currentUser:null,
   page:'dashboard', projectId:null, toolId:null,
   pendingRender:false, navOpen:false,
   snFilter:'', showAllParts:false,
-  anProject:'', anTool:'',
+  anProject:'', anTool:'', anFac:'',
   syncing:false, syncError:'', lastSync:null,
 };
 
@@ -355,7 +358,20 @@ async function ghWrite(obj, sha, message) {
 }
 
 function normalise(d) {
-  const o = {}; COLS.forEach(c => { o[c] = Array.isArray(d && d[c]) ? d[c] : []; }); return o;
+  const o = {}; COLS.forEach(c => { o[c] = Array.isArray(d && d[c]) ? d[c] : []; });
+  // which default accounts were already created (so a deleted one is not re-created)
+  o.seeded = Array.isArray(d && d.seeded) ? d.seeded : (o.users.length ? ['admin','user1'] : []);
+  return o;
+}
+// Add any default account that was never created before
+function seedUsers(d) {
+  const done = new Set(d.seeded || []);
+  INITIAL_USERS.forEach(u => {
+    if (done.has(u.id)) return;
+    if (!d.users.some(x => x.id === u.id || (x.login||'').toLowerCase() === u.login.toLowerCase())) d.users.push(JSON.parse(JSON.stringify(u)));
+    done.add(u.id);
+  });
+  d.seeded = [...done];
 }
 
 const Store = {
@@ -376,7 +392,7 @@ const Store = {
     try { localStorage.setItem(LOCAL_KEY, JSON.stringify(Object.assign({ _sha: this.sha }, data))); }
     catch (e) { console.warn('[cache] localStorage write failed', e); }
   },
-  apply(d) { COLS.forEach(c => { data[c] = d[c]; }); this.saveLocal(); },
+  apply(d) { COLS.forEach(c => { data[c] = d[c]; }); data.seeded = d.seeded || []; this.saveLocal(); },
   // Fetch the latest data from GitHub. quiet = no toast on success.
   async pull(quiet) {
     if (!ghConfigured()) return false;
@@ -402,7 +418,7 @@ const Store = {
       try {
         if (!ghConfigured()) { // local only
           const d = normalise(JSON.parse(JSON.stringify(data)));
-          if (!d.users.length) d.users = JSON.parse(JSON.stringify(INITIAL_USERS));
+          seedUsers(d);
           fn(d); this.apply(d); onData(); return true;
         }
         state.syncing = true; updateSyncBadge();
@@ -410,7 +426,7 @@ const Store = {
           try {
             const remote = await ghRead();
             const d = remote.data ? normalise(remote.data) : normalise(JSON.parse(JSON.stringify(data)));
-            if (!d.users.length) d.users = JSON.parse(JSON.stringify(INITIAL_USERS));
+            seedUsers(d);
             fn(d);
             const by = state.currentUser ? ` (${state.currentUser.login})` : '';
             this.sha = await ghWrite(d, remote.sha, (message || 'Tool tracking update') + by);
@@ -476,7 +492,12 @@ function scheduleRender() {
 }
 setInterval(() => { if (state.pendingRender && !isTyping()) render(); }, 1500);
 
-function usersList() { return data.users.length ? data.users : INITIAL_USERS; }
+function usersList() {
+  // stored users plus default accounts not yet written to GitHub
+  const done = new Set(data.seeded || []);
+  const extra = INITIAL_USERS.filter(u => !done.has(u.id) && !data.users.some(x => x.id === u.id || (x.login||'').toLowerCase() === u.login.toLowerCase()));
+  return data.users.concat(extra);
+}
 async function ensureUsersSaved() { return true; } // default accounts are written with the first change
 
 function syncInfo() {
@@ -521,6 +542,20 @@ function el(html) { const d = document.createElement('div'); d.innerHTML = html.
 // ============================================================
 // true when part p was produced after maintenance m (ties broken by entry time)
 function after(p, m) { return p.producedAt > m.performedAt || (p.producedAt === m.performedAt && (p.createdAt||'') > (m.createdAt||'')); }
+// ---- Facility access ----
+// Administrators see every facility. A user sees only the facilities the administrator ticked
+// (accounts saved before facilities existed keep full access until the admin edits them).
+function userFacilities(u) {
+  if (!u) return [];
+  if (u.role === 'admin') return FACILITIES.slice();
+  return Array.isArray(u.facilities) ? u.facilities.filter(f => FACILITIES.includes(f)) : FACILITIES.slice();
+}
+function canSeeTool(t) { return !!t && (isAdmin() || (!!t.facility && userFacilities(state.currentUser).includes(t.facility))); }
+function visTools() { return data.tools.filter(canSeeTool); }
+function visParts() { const ids = new Set(visTools().map(t => t.id)); return data.parts.filter(p => ids.has(p.toolId)); }
+function visProjects() { if (isAdmin()) return data.projects.slice(); const ids = new Set(visTools().map(t => t.projectId)); return data.projects.filter(p => ids.has(p.id)); }
+function facBadge(f) { return f ? `<span class="badge badge-blue">${esc(f)}</span>` : `<span class="badge badge-red" title="Assign a facility so users can see this tool">No facility</span>`; }
+
 function partsOf(toolId) { return data.parts.filter(p => p.toolId === toolId); }
 function maintOf(toolId) { return data.maint.filter(m => m.toolId === toolId).sort((a,b) => (b.performedAt||'').localeCompare(a.performedAt||'')); }
 
@@ -585,7 +620,7 @@ function toolStatus(t, s) {
 }
 
 function alertTools() {
-  return data.tools.map(t => ({ t, s: toolStats(t) })).filter(x => x.s.status.lvl >= 1)
+  return visTools().map(t => ({ t, s: toolStats(t) })).filter(x => x.s.status.lvl >= 1)
     .sort((a,b) => b.s.status.lvl - a.s.status.lvl);
 }
 function projectName(id) { const p = data.projects.find(x => x.id === id); return p ? p.name : '—'; }
@@ -712,7 +747,8 @@ function renderApp() {
     </div>
     <div class="app-body">
       <div class="sidebar ${state.navOpen ? 'open' : ''}">
-        <div class="sidebar-user"><div class="name">${esc(u.name)}</div><div class="role">${admin ? 'Administrator' : 'Operator'}</div></div>
+        <div class="sidebar-user"><div class="name">${esc(u.name)}</div><div class="role">${admin ? 'Administrator' : 'Operator'}</div>
+          <div style="display:flex;gap:4px;flex-wrap:wrap;margin-top:8px">${userFacilities(u).map(f => `<span class="badge badge-blue" style="font-size:9px;padding:1px 6px">${f}</span>`).join('') || '<span style="font-size:10px;color:var(--amber)">No facility access</span>'}</div></div>
         <nav>
           <div class="nav-section">Navigation</div>
           <a data-nav="dashboard" class="${state.page==='dashboard'?'active':''}">${svgIcon('grid')} Dashboard</a>
@@ -759,10 +795,11 @@ function wireCrumbs(root) {
 // ============================================================
 function renderDashboard() {
   const u = state.currentUser;
-  const activeProjects = data.projects.filter(p => p.status !== 'closed').length;
-  const activeTools = data.tools.filter(t => t.status !== 'retired').length;
+  const activeProjects = visProjects().filter(p => p.status !== 'closed').length;
+  const activeTools = visTools().filter(t => t.status !== 'retired').length;
+  const vParts = visParts();
   const weekAgo = new Date(Date.now() - 7*864e5).toISOString();
-  const thisWeek = data.parts.filter(p => p.producedAt >= weekAgo).length;
+  const thisWeek = vParts.filter(p => p.producedAt >= weekAgo).length;
   const alerts = alertTools();
   const overdue = alerts.filter(a => a.s.status.lvl >= 2).length;
 
@@ -772,7 +809,7 @@ function renderDashboard() {
     <div class="stats-row">
       <div class="stat-card"><div class="label">Active projects</div><div class="value">${activeProjects}</div></div>
       <div class="stat-card"><div class="label">Tools in service</div><div class="value">${activeTools}</div></div>
-      <div class="stat-card"><div class="label">Parts recorded</div><div class="value" style="color:var(--cyan)">${data.parts.length}</div><div class="sub">${thisWeek} in the last 7 days</div></div>
+      <div class="stat-card"><div class="label">Parts recorded</div><div class="value" style="color:var(--cyan)">${vParts.length}</div><div class="sub">${thisWeek} in the last 7 days</div></div>
       <div class="stat-card"><div class="label">Maintenance alerts</div><div class="value" style="color:${overdue ? 'var(--red)' : alerts.length ? 'var(--amber)' : 'var(--green)'}">${alerts.length}</div><div class="sub">${overdue} overdue or end of life</div></div>
     </div>
     <div class="split">
@@ -789,7 +826,7 @@ function renderDashboard() {
 
   const rc = div.querySelector('#dash-recent');
   rc.innerHTML = `<div class="card-title">Latest production</div>`;
-  const recent = data.parts.slice().sort((a,b) => (b.createdAt||'').localeCompare(a.createdAt||'')).slice(0, 8);
+  const recent = vParts.slice().sort((a,b) => (b.createdAt||'').localeCompare(a.createdAt||'')).slice(0, 8);
   if (!recent.length) rc.appendChild(el(`<div class="empty">No parts recorded yet. Open a project, choose a tool and register the first part.</div>`));
   else {
     const tl = document.createElement('div');
@@ -809,12 +846,13 @@ function renderDashboard() {
 }
 
 function alertTable(list) {
-  const wrap = el(`<div class="table-wrap"><table><thead><tr><th>Status</th><th>Tool</th><th>Project</th><th>Since maintenance</th><th>Reason</th></tr></thead><tbody></tbody></table></div>`);
+  const wrap = el(`<div class="table-wrap"><table><thead><tr><th>Status</th><th>Tool</th><th>Facility</th><th>Project</th><th>Since maintenance</th><th>Reason</th></tr></thead><tbody></tbody></table></div>`);
   const tb = wrap.querySelector('tbody');
   list.forEach(({ t, s }) => {
     const tr = el(`<table><tr class="click">
       <td><span class="badge badge-${s.status.cls}">${s.status.label}</span></td>
       <td><strong>${esc(t.code)}</strong><div class="muted" style="font-size:10px">${esc(t.name)}</div></td>
+      <td>${facBadge(t.facility)}</td>
       <td>${esc(projectName(t.projectId))}</td>
       <td>${t.maintCycles ? meter(s.since, t.maintCycles, t.warnPct) : `<span class="muted">${s.since} parts</span>`}</td>
       <td style="font-size:10px;color:var(--text2);max-width:280px">${s.status.reasons.map(esc).join('<br>')}</td>
@@ -834,22 +872,26 @@ function renderProjects() {
     admin && canWrite() ? `<button class="btn btn-primary" id="new-proj">${svgIcon('plus')} New project</button>` : '')}<div id="pgrid"></div></div>`);
   if (div.querySelector('#new-proj')) div.querySelector('#new-proj').onclick = () => openProjectForm(null);
   const g = div.querySelector('#pgrid');
-  const projects = data.projects.slice().sort((a,b) => (a.status==='closed') - (b.status==='closed') || (a.code||'').localeCompare(b.code||''));
+  const projects = visProjects().sort((a,b) => (a.status==='closed') - (b.status==='closed') || (a.code||'').localeCompare(b.code||''));
   if (!projects.length) {
-    g.appendChild(el(`<div class="card"><div class="empty">${admin ? 'No projects yet. Use “New project” to create the first one, then add its tools.' : 'No projects yet. The administrator needs to create projects and their tool lists.'}</div></div>`));
+    const none = !admin && !userFacilities(state.currentUser).length;
+    g.appendChild(el(`<div class="card"><div class="empty">${admin ? 'No projects yet. Use “New project” to create the first one, then add its tools.' : none ? 'Your account has no facility access yet. Ask the administrator to assign OSS, OHV or OMAR.' : 'No projects with tools at your facilities yet.'}</div></div>`));
     return div;
   }
   const grid = el(`<div class="proj-grid"></div>`);
   projects.forEach(p => {
-    const tools = data.tools.filter(t => t.projectId === p.id);
-    const parts = data.parts.filter(x => x.projectId === p.id).length;
+    const tools = visTools().filter(t => t.projectId === p.id);
+    const tIds = new Set(tools.map(x => x.id));
+    const parts = data.parts.filter(x => tIds.has(x.toolId)).length;
+    const facs = FACILITIES.filter(f => tools.some(x => x.facility === f));
     const nAl = tools.map(t => toolStats(t).status.lvl).filter(l => l >= 1).length;
     const card = el(`<button class="proj-card ${p.status==='closed'?'closed':''}">
       <div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><span class="pc-code">${esc(p.code || '')}</span>
       ${p.status==='closed' ? '<span class="badge badge-gray">Closed</span>' : nAl ? `<span class="badge badge-amber">${nAl} alert${nAl>1?'s':''}</span>` : ''}</div>
       <div class="pc-name">${esc(p.name)}</div>
       <div class="pc-desc">${esc(p.client ? p.client + (p.description ? ' — ' : '') : '')}${esc(p.description || '')}</div>
-      <div class="pc-stats"><div>Tools<b>${tools.length}</b></div><div>Parts<b>${parts}</b></div></div>
+      <div class="pc-stats"><div>Tools<b>${tools.length}</b></div><div>Parts<b>${parts}</b></div>
+        <span style="margin-left:auto;display:flex;gap:4px">${facs.map(f => `<span class="badge badge-blue" style="font-size:9px;padding:1px 6px">${f}</span>`).join('')}</span></div>
     </button>`);
     card.onclick = () => nav('project', { projectId: p.id });
     grid.appendChild(card);
@@ -859,10 +901,10 @@ function renderProjects() {
 }
 
 function renderProject() {
-  const p = data.projects.find(x => x.id === state.projectId);
+  const p = visProjects().find(x => x.id === state.projectId);
   if (!p) return el(`<div>${header('Project not found', 'It may have been removed.', [{label:'Projects', nav:{page:'projects'}}])}</div>`);
   const admin = isAdmin() && canWrite();
-  const tools = data.tools.filter(t => t.projectId === p.id).sort((a,b) => (a.status==='retired') - (b.status==='retired') || (a.code||'').localeCompare(b.code||''));
+  const tools = visTools().filter(t => t.projectId === p.id).sort((a,b) => (a.status==='retired') - (b.status==='retired') || (a.code||'').localeCompare(b.code||''));
   const div = el(`<div>${header(`<span class="code">${esc(p.code||'')}</span> ${esc(p.name)}`,
       esc([p.client, p.description].filter(Boolean).join(' — ')) || 'Tools used in this project',
       [{label:'Projects', nav:{page:'projects'}}, {label:p.name}],
@@ -878,13 +920,14 @@ function renderProject() {
     box.appendChild(el(`<div class="empty">${admin ? 'This project has no tools yet. Use “Add tool” to build the tool list.' : 'The administrator has not added tools to this project yet.'}</div>`));
     return div;
   }
-  const wrap = el(`<div class="table-wrap"><table><thead><tr><th>Tool ID</th><th>Name</th><th>Type</th><th class="num">Total parts</th><th>Since maintenance</th><th>Last used</th><th>Status</th><th></th></tr></thead><tbody></tbody></table></div>`);
+  const wrap = el(`<div class="table-wrap"><table><thead><tr><th>Tool ID</th><th>Name</th><th>Facility</th><th>Type</th><th class="num">Total parts</th><th>Since maintenance</th><th>Last used</th><th>Status</th><th></th></tr></thead><tbody></tbody></table></div>`);
   const tb = wrap.querySelector('tbody');
   tools.forEach(t => {
     const s = toolStats(t);
     const tr = el(`<table><tr class="click">
       <td><strong style="color:var(--cyan)">${esc(t.code)}</strong></td>
       <td>${esc(t.name)}</td>
+      <td>${facBadge(t.facility)}</td>
       <td class="muted">${esc(t.type || '—')}</td>
       <td class="num"><strong>${s.total}</strong>${t.lifeCycles ? `<span class="muted"> / ${t.lifeCycles}</span>` : ''}</td>
       <td>${t.maintCycles ? meter(s.since, t.maintCycles, t.warnPct) : `<span class="muted">${s.since} parts</span>`}</td>
@@ -903,7 +946,7 @@ function renderProject() {
 // TOOL DETAIL
 // ============================================================
 function renderTool() {
-  const t = data.tools.find(x => x.id === state.toolId);
+  const t = data.tools.find(x => x.id === state.toolId && canSeeTool(x));
   if (!t) return el(`<div>${header('Tool not found', 'It may have been removed.', [{label:'Projects', nav:{page:'projects'}}])}</div>`);
   const p = data.projects.find(x => x.id === t.projectId) || { name:'—', id:null };
   const s = toolStats(t);
@@ -913,7 +956,7 @@ function renderTool() {
     + (admin ? `<button class="btn btn-outline" id="edit-tool">${svgIcon('edit')} Edit tool</button>` : '');
   const div = el(`<div>
     ${header(`<span class="code">${esc(t.code)}</span> ${esc(t.name)}`,
-      esc([t.type, t.description].filter(Boolean).join(' — ')) || 'Tool record',
+      (t.facility ? esc(t.facility) + ' · ' : '') + (esc([t.type, t.description].filter(Boolean).join(' — ')) || 'Tool record'),
       [{label:'Projects', nav:{page:'projects'}}, {label:p.name, nav:{page:'project', projectId:p.id}}, {label:t.code}], actions)}
     ${s.status.lvl >= 1 ? `<div class="alert alert-${s.status.lvl >= 2 ? 'error' : 'warning'}"><strong>${s.status.label}.</strong> ${s.status.reasons.map(esc).join(' · ')}</div>` : ''}
     ${retired ? `<div class="alert alert-info">This tool is retired. New parts can't be registered until an administrator returns it to service.</div>` : ''}
@@ -934,6 +977,7 @@ function renderTool() {
         <div class="card-title">Tool data</div>
         <table><tbody>
           <tr><td class="muted">Project</td><td>${esc(p.name)}</td></tr>
+          <tr><td class="muted">Facility</td><td>${facBadge(t.facility)}</td></tr>
           <tr><td class="muted">In service since</td><td>${t.inServiceAt ? fmtDate(t.inServiceAt) : '—'}</td></tr>
           <tr><td class="muted">Maintenance events</td><td>${s.maintCount}</td></tr>
           <tr><td class="muted">Avg parts between maint.</td><td>${s.avgInterval != null ? Math.round(s.avgInterval) : '—'}</td></tr>
@@ -1031,7 +1075,7 @@ function renderAlerts() {
   al.innerHTML = `<div class="card-title" style="padding:18px 20px 0">Alerts</div>`;
   al.appendChild(list.length ? alertTable(list) : el(`<div class="empty">No alerts. Every tool in service is within its limits.</div>`));
 
-  const up = data.tools.filter(t => t.status !== 'retired').map(t => ({ t, s: toolStats(t) })).filter(x => x.s.forecast)
+  const up = visTools().filter(t => t.status !== 'retired').map(t => ({ t, s: toolStats(t) })).filter(x => x.s.forecast)
     .sort((a,b) => a.s.forecast.localeCompare(b.s.forecast)).slice(0, 15);
   const uc = div.querySelector('#upc');
   uc.innerHTML = `<div class="card-title" style="padding:18px 20px 0">Upcoming maintenance (estimated)</div>`;
@@ -1052,24 +1096,29 @@ function renderAlerts() {
 // TOOL LONGEVITY / ANALYSIS
 // ============================================================
 function renderAnalysis() {
-  const projOpts = data.projects.slice().sort((a,b)=>(a.code||'').localeCompare(b.code||''));
-  if (state.anProject && !data.projects.find(p => p.id === state.anProject)) state.anProject = '';
-  const toolsInScope = data.tools.filter(t => !state.anProject || t.projectId === state.anProject);
+  const projOpts = visProjects().sort((a,b)=>(a.code||'').localeCompare(b.code||''));
+  if (state.anProject && !projOpts.find(p => p.id === state.anProject)) state.anProject = '';
+  const myFacs = userFacilities(state.currentUser);
+  if (state.anFac && !myFacs.includes(state.anFac)) state.anFac = '';
+  const toolsInScope = visTools().filter(t => (!state.anProject || t.projectId === state.anProject) && (!state.anFac || t.facility === state.anFac));
   if (state.anTool && !toolsInScope.find(t => t.id === state.anTool)) state.anTool = '';
   const div = el(`<div>${header('Tool longevity', 'Usage history, maintenance intervals achieved and life consumed per tool.', [],
       `<button class="btn btn-outline" id="exp">${svgIcon('download')} Export records (CSV)</button>`)}
     <div class="toolbar">
+      <select id="an-f" style="width:auto;min-width:140px"><option value="">All facilities</option>${myFacs.map(f=>`<option ${state.anFac===f?'selected':''}>${f}</option>`).join('')}</select>
       <select id="an-p" style="width:auto;min-width:200px"><option value="">All projects</option>${projOpts.map(p=>`<option value="${p.id}" ${state.anProject===p.id?'selected':''}>${esc(p.code ? p.code + ' — ' : '')}${esc(p.name)}</option>`).join('')}</select>
       <select id="an-t" style="width:auto;min-width:200px"><option value="">All tools</option>${toolsInScope.map(t=>`<option value="${t.id}" ${state.anTool===t.id?'selected':''}>${esc(t.code)} — ${esc(t.name)}</option>`).join('')}</select>
     </div>
     <div class="card section" id="chart"></div>
     <div class="card" style="padding:0" id="tbl"></div></div>`);
+  div.querySelector('#an-f').onchange = e => { state.anFac = e.target.value; state.anTool = ''; render(); };
   div.querySelector('#an-p').onchange = e => { state.anProject = e.target.value; state.anTool = ''; render(); };
   div.querySelector('#an-t').onchange = e => { state.anTool = e.target.value; render(); };
   div.querySelector('#exp').onclick = exportCSV;
 
   // Monthly production chart, last 12 months
-  const parts = data.parts.filter(p => (!state.anProject || p.projectId === state.anProject) && (!state.anTool || p.toolId === state.anTool));
+  const scopeIds = new Set(toolsInScope.map(x => x.id));
+  const parts = data.parts.filter(p => scopeIds.has(p.toolId) && (!state.anTool || p.toolId === state.anTool));
   const months = []; const d0 = new Date(); d0.setDate(1);
   for (let i = 11; i >= 0; i--) { const d = new Date(d0.getFullYear(), d0.getMonth() - i, 1); months.push({ key:`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`, label:d.toLocaleString('en-GB',{month:'short'}), n:0 }); }
   parts.forEach(p => { const d = new Date(p.producedAt); const k = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`; const m = months.find(x => x.key === k); if (m) m.n++; });
@@ -1083,12 +1132,12 @@ function renderAnalysis() {
   tb.innerHTML = `<div class="card-title" style="padding:18px 20px 0">Per tool</div>`;
   const rows = (state.anTool ? toolsInScope.filter(t => t.id === state.anTool) : toolsInScope);
   if (!rows.length) { tb.appendChild(el(`<div class="empty">No tools to analyse yet.</div>`)); return div; }
-  const w = el(`<div class="table-wrap"><table><thead><tr><th>Tool</th><th>Project</th><th class="num">Parts</th><th>First use</th><th>Last use</th><th class="num">Rate /week</th><th class="num">Maint. events</th><th class="num">Avg parts / interval</th><th>Life used</th><th>Next maint. (est.)</th><th>Status</th></tr></thead><tbody></tbody></table></div>`);
+  const w = el(`<div class="table-wrap"><table><thead><tr><th>Tool</th><th>Facility</th><th>Project</th><th class="num">Parts</th><th>First use</th><th>Last use</th><th class="num">Rate /week</th><th class="num">Maint. events</th><th class="num">Avg parts / interval</th><th>Life used</th><th>Next maint. (est.)</th><th>Status</th></tr></thead><tbody></tbody></table></div>`);
   rows.forEach(t => {
     const s = toolStats(t);
     const tr = el(`<table><tr class="click">
       <td><strong style="color:var(--cyan)">${esc(t.code)}</strong><div class="muted" style="font-size:10px">${esc(t.name)}</div></td>
-      <td>${esc(projectName(t.projectId))}</td><td class="num"><strong>${s.total}</strong></td>
+      <td>${facBadge(t.facility)}</td><td>${esc(projectName(t.projectId))}</td><td class="num"><strong>${s.total}</strong></td>
       <td class="muted" style="white-space:nowrap">${fmtDate(s.firstUse)}</td><td class="muted" style="white-space:nowrap">${fmtDate(s.lastUse)}</td>
       <td class="num">${(s.rate*7).toFixed(1)}</td><td class="num">${s.maintCount}</td>
       <td class="num">${s.avgInterval != null ? Math.round(s.avgInterval) : '—'}${t.maintCycles ? `<span class="muted"> / ${t.maintCycles}</span>` : ''}</td>
@@ -1104,11 +1153,11 @@ function renderAnalysis() {
 
 async function exportCSV() {
   const q = v => `"${String(v ?? '').replace(/"/g,'""')}"`;
-  const rows = [['Project code','Project','Tool ID','Tool name','Cycle #','Serial number','Produced at','Registered by','Notes'].map(q).join(',')];
-  data.tools.forEach(t => {
+  const rows = [['Facility','Project code','Project','Tool ID','Tool name','Cycle #','Serial number','Produced at','Registered by','Notes'].map(q).join(',')];
+  visTools().forEach(t => {
     const p = data.projects.find(x => x.id === t.projectId) || {};
     partsOf(t.id).sort((a,b)=>(a.producedAt||'').localeCompare(b.producedAt||'')).forEach((r,i) => {
-      rows.push([p.code, p.name, t.code, t.name, i+1, r.sn, fmtDateTime(r.producedAt), userName(r.createdBy), r.notes].map(q).join(','));
+      rows.push([t.facility, p.code, p.name, t.code, t.name, i+1, r.sn, fmtDateTime(r.producedAt), userName(r.createdBy), r.notes].map(q).join(','));
     });
   });
   const csv = '\uFEFF' + rows.join('\r\n');
@@ -1132,7 +1181,8 @@ function renderUsers() {
     const row = el(`<div class="user-row">
       <div class="user-avatar">${esc(ini)}</div>
       <div class="user-info"><div class="uname">${esc(u.name)} ${u.role==='admin' ? '<span class="badge badge-blue" style="margin-left:4px">Admin</span>' : ''}</div>
-      <div class="ulogin">@${esc(u.login)} · ${n} part${n===1?'':'s'} registered</div></div>
+      <div class="ulogin">@${esc(u.login)} · ${n} part${n===1?'':'s'} registered</div>
+      <div style="display:flex;gap:4px;margin-top:6px;flex-wrap:wrap">${u.role==='admin' ? '<span class="badge badge-gray" style="font-size:9px">All facilities</span>' : (userFacilities(u).map(f => `<span class="badge badge-blue" style="font-size:9px;padding:1px 6px">${f}</span>`).join('') || '<span class="badge badge-amber" style="font-size:9px">No facility access</span>')}</div></div>
       <div class="btn-group">${canWrite() ? `<button class="btn btn-outline btn-sm" data-e>${svgIcon('edit')} Edit</button>
       ${u.id !== 'admin' && u.id !== state.currentUser.id ? `<button class="btn btn-danger btn-sm" data-r>Remove</button>` : ''}` : ''}</div>
     </div>`);
@@ -1254,8 +1304,8 @@ function confirmBox(title, bodyHtml, okLabel, onOk) {
 // ---- Register part ----
 function openRegisterPart(tool) {
   if (!canWrite()) return;
-  const usable = data.tools.filter(t => t.status !== 'retired');
-  if (!tool && !usable.length) { toast('No tools available yet. The administrator needs to add tools to a project.', 'warn', 5000); return; }
+  const usable = visTools().filter(t => t.status !== 'retired');
+  if (!tool && !usable.length) { toast('No tools available at your facilities yet.', 'warn', 5000); return; }
   const now = new Date();
   const toolPicker = tool ? '' : `<div class="grid2">
       <div class="form-group"><label>Project</label><select id="rp-proj">${data.projects.filter(p => usable.some(t => t.projectId === p.id)).map(p => `<option value="${p.id}">${esc(p.code ? p.code + ' — ' : '')}${esc(p.name)}</option>`).join('')}</select></div>
@@ -1276,7 +1326,7 @@ function openRegisterPart(tool) {
   let current = tool;
   if (!tool) {
     const ps = m.querySelector('#rp-proj'), ts = m.querySelector('#rp-tool');
-    const fill = () => { ts.innerHTML = usable.filter(t => t.projectId === ps.value).map(t => `<option value="${t.id}">${esc(t.code)} — ${esc(t.name)}</option>`).join(''); current = usable.find(t => t.id === ts.value); };
+    const fill = () => { ts.innerHTML = usable.filter(t => t.projectId === ps.value).map(t => `<option value="${t.id}">${esc(t.code)} — ${esc(t.name)}${t.facility ? ' (' + esc(t.facility) + ')' : ''}</option>`).join(''); current = usable.find(t => t.id === ts.value); };
     ps.onchange = fill; ts.onchange = () => { current = usable.find(t => t.id === ts.value); };
     fill();
   }
@@ -1392,6 +1442,10 @@ function openToolForm(t, projectId) {
       <div class="form-group"><label>Tool ID</label><input type="text" id="tf-code" value="${esc(t.code||'')}" placeholder="e.g. M-0231" autofocus></div>
       <div class="form-group"><label>Type</label><select id="tf-type">${TOOL_TYPES.map(x => `<option ${t.type===x?'selected':''}>${x}</option>`).join('')}</select></div>
     </div>
+    <div class="grid2">
+      <div class="form-group"><label>Facility (location)</label><select id="tf-fac"><option value="">Select facility…</option>${FACILITIES.map(f => `<option ${t.facility===f?'selected':''}>${f}</option>`).join('')}</select></div>
+      <div></div>
+    </div>
     <div class="form-group"><label>Tool name</label><input type="text" id="tf-name" value="${esc(t.name||'')}" placeholder="e.g. Wing skin lower mould"></div>
     <div class="form-group"><label>Description (optional)</label><input type="text" id="tf-desc" value="${esc(t.description||'')}" placeholder="Material, location, supplier…"></div>
     <div class="section-title" style="margin-top:6px">Maintenance & life</div>
@@ -1415,10 +1469,11 @@ function openToolForm(t, projectId) {
     const code = g('#tf-code'), name = g('#tf-name');
     const err = h => m.querySelector('#tf-err').innerHTML = `<div class="alert alert-error">${h}</div>`;
     if (!code || !name) return err('Enter the tool ID and name.');
+    if (!g('#tf-fac')) return err('Select the facility where the tool is located.');
     if (data.tools.some(x => x.id !== t.id && x.projectId === projectId && (x.code||'').toLowerCase() === code.toLowerCase())) return err('This project already has a tool with that ID.');
     let wp = num(g('#tf-wp')) || 80; wp = Math.min(100, Math.max(10, wp));
     const since = g('#tf-since');
-    const rec = Object.assign({}, t, { id: t.id || uid(), projectId, code, name, type: g('#tf-type'), description: g('#tf-desc'),
+    const rec = Object.assign({}, t, { id: t.id || uid(), projectId, code, name, facility: g('#tf-fac'), type: g('#tf-type'), description: g('#tf-desc'),
       maintCycles: num(g('#tf-mc')), maintDays: num(g('#tf-md')), warnPct: wp, lifeCycles: num(g('#tf-life')),
       inServiceAt: since ? new Date(since + 'T00:00:00').toISOString() : '', status: g('#tf-status'),
       createdAt: t.createdAt || nowISO(), updatedAt: nowISO() });
@@ -1449,6 +1504,9 @@ function openUserForm(u) {
       <div class="form-group"><label>Login</label><input type="text" id="uf-login" value="${esc(u.login||'')}" autocapitalize="off" ${lockedAdmin?'disabled':''}></div>
       <div class="form-group"><label>${isNew ? 'Password' : 'New password'}</label><input type="password" id="uf-pass" autocomplete="new-password"></div>
     </div>
+    <div class="form-group"><label>Facility access</label>
+      <div style="display:flex;gap:18px;flex-wrap:wrap;padding:6px 0">${FACILITIES.map(f => `<label style="display:flex;align-items:center;text-transform:none;letter-spacing:0;font-size:12px;color:var(--text);margin:0;cursor:pointer"><input type="checkbox" class="uf-fac" value="${f}" ${(isNew ? false : userFacilities(u).includes(f)) ? 'checked' : ''}> ${f}</label>`).join('')}</div>
+      <div class="hint">The user only sees tools, records and alerts from the ticked facilities. Administrators always see all.</div></div>
     <div class="form-group"><label>Role</label><select id="uf-role" ${lockedAdmin?'disabled':''}><option value="user">User — registers parts and maintenance</option><option value="admin" ${u.role==='admin'?'selected':''}>Administrator — also manages projects, tools and users</option></select></div>
     <div id="uf-err"></div>
     <div class="modal-actions"><button class="btn btn-outline" data-c>Cancel</button><button class="btn btn-primary" data-ok>${isNew ? 'Create user' : 'Save changes'}</button></div>`);
@@ -1462,9 +1520,12 @@ function openUserForm(u) {
     if (isNew && pass.length < 6) return err('The password needs at least 6 characters.');
     if (!isNew && pass && pass.length < 6) return err('The new password needs at least 6 characters.');
     if (usersList().some(x => x.id !== u.id && x.login.toLowerCase() === login.toLowerCase())) return err('That login is already in use.');
+    const facilities = [...m.querySelectorAll('.uf-fac:checked')].map(x => x.value);
+    const role = lockedAdmin ? 'admin' : g('#uf-role');
+    if (role !== 'admin' && !facilities.length) return err('Tick at least one facility for this user.');
     if (!(await ensureUsersSaved())) return;
     const base = isNew ? {} : (usersList().find(x => x.id === u.id) || u);
-    const rec = Object.assign({}, base, { id: u.id || ('u' + uid()), name, login, role: lockedAdmin ? 'admin' : g('#uf-role'), pass: pass || base.pass, createdAt: base.createdAt || nowISO() });
+    const rec = Object.assign({}, base, { id: u.id || ('u' + uid()), name, login, role, facilities: role === 'admin' ? FACILITIES.slice() : facilities, pass: pass || base.pass, createdAt: base.createdAt || nowISO() });
     if (await Store.put('users', rec, `User ${login}`)) { closeModal(); toast(isNew ? `User ${name} created.` : `User ${name} updated.`); }
   };
 }
