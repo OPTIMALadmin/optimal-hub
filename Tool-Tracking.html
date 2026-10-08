@@ -271,6 +271,7 @@ const COLS = ['users','projects','tools','parts','maint'];
 const INITIAL_USERS = [
   { id:'admin', login:'admin', pass:'adminOPTIMAL', name:'Administrator', role:'admin', facilities:['OSS','OHV','OMAR'] },
   { id:'user1', login:'user1', pass:'user1OPTIMAL', name:'User 1',        role:'user',  facilities:['OSS','OHV','OMAR'] },
+  { id:'production', login:'Production', pass:'productionOPTIMAL', name:'Production', role:'manager', facilities:['OSS','OHV','OMAR'] },
   { id:'userhv',  login:'userhv',  pass:'userHV',  name:'User HV',  role:'user', facilities:['OHV'] },
   { id:'usermar', login:'usermar', pass:'userMAR', name:'User MAR', role:'user', facilities:['OMAR'] },
 ];
@@ -527,7 +528,10 @@ function toLocalInput(d) { const p = n => String(n).padStart(2,'0'); return `${d
 function nowISO() { return new Date().toISOString(); }
 function num(v) { const n = Number(v); return isFinite(n) && n > 0 ? Math.round(n) : 0; }
 function userName(id) { const u = usersList().find(x => x.id === id); return u ? u.name : 'Former user'; }
-function isAdmin() { return state.currentUser && state.currentUser.role === 'admin'; }
+function isAdmin() { return !!state.currentUser && state.currentUser.role === 'admin'; }
+// Administrators and Production users create and edit projects and tools
+function canManage() { return !!state.currentUser && (state.currentUser.role === 'admin' || state.currentUser.role === 'manager'); }
+const ROLE_LABEL = { admin:'Administrator', manager:'Production', user:'Operator' };
 function canWrite() { return true; }
 function toast(msg, type='success', duration=3500) {
   const box = document.getElementById('toast');
@@ -555,7 +559,7 @@ function userFacilities(u) {
 function canSeeTool(t) { return !!t && (isAdmin() || (!!t.facility && userFacilities(state.currentUser).includes(t.facility))); }
 function visTools() { return data.tools.filter(canSeeTool); }
 function visParts() { const ids = new Set(visTools().map(t => t.id)); return data.parts.filter(p => ids.has(p.toolId)); }
-function visProjects() { if (isAdmin()) return data.projects.slice(); const ids = new Set(visTools().map(t => t.projectId)); return data.projects.filter(p => ids.has(p.id)); }
+function visProjects() { if (canManage()) return data.projects.slice(); const ids = new Set(visTools().map(t => t.projectId)); return data.projects.filter(p => ids.has(p.id)); }
 // ---- Serial number allocation (moulds) ----
 // Format: 5-digit project number + company code + 2-digit year + 3-digit sequence, e.g. 00014HV26001.
 // The sequence restarts each year and is counted per project and company.
@@ -771,7 +775,7 @@ function renderApp() {
     </div>
     <div class="app-body">
       <div class="sidebar ${state.navOpen ? 'open' : ''}">
-        <div class="sidebar-user"><div class="name">${esc(u.name)}</div><div class="role">${admin ? 'Administrator' : 'Operator'}</div>
+        <div class="sidebar-user"><div class="name">${esc(u.name)}</div><div class="role">${ROLE_LABEL[u.role] || 'Operator'}</div>
           <div style="display:flex;gap:4px;flex-wrap:wrap;margin-top:8px">${userFacilities(u).map(f => `<span class="badge badge-blue" style="font-size:9px;padding:1px 6px">${f}</span>`).join('') || '<span style="font-size:10px;color:var(--amber)">No facility access</span>'}</div></div>
         <nav>
           <div class="nav-section">Navigation</div>
@@ -891,7 +895,7 @@ function alertTable(list) {
 // PROJECTS
 // ============================================================
 function renderProjects() {
-  const admin = isAdmin();
+  const admin = canManage();
   const div = el(`<div>${header('Projects', admin ? 'Create projects and the tool list used in each one.' : 'Choose a project to see its tools and register parts.', [],
     admin && canWrite() ? `<button class="btn btn-primary" id="new-proj">${svgIcon('plus')} New project</button>` : '')}<div id="pgrid"></div></div>`);
   if (div.querySelector('#new-proj')) div.querySelector('#new-proj').onclick = () => openProjectForm(null);
@@ -927,7 +931,7 @@ function renderProjects() {
 function renderProject() {
   const p = visProjects().find(x => x.id === state.projectId);
   if (!p) return el(`<div>${header('Project not found', 'It may have been removed.', [{label:'Projects', nav:{page:'projects'}}])}</div>`);
-  const admin = isAdmin() && canWrite();
+  const admin = canManage() && canWrite();
   const tools = visTools().filter(t => t.projectId === p.id).sort((a,b) => (a.status==='retired') - (b.status==='retired') || (a.code||'').localeCompare(b.code||''));
   const div = el(`<div>${header(`<span class="code">${esc(projectNumber(p) || p.code || '')}</span> ${esc(p.name)}`,
       esc([p.client, p.description].filter(Boolean).join(' — ')) || 'Tools used in this project',
@@ -974,7 +978,7 @@ function renderTool() {
   if (!t) return el(`<div>${header('Tool not found', 'It may have been removed.', [{label:'Projects', nav:{page:'projects'}}])}</div>`);
   const p = data.projects.find(x => x.id === t.projectId) || { name:'—', id:null };
   const s = toolStats(t);
-  const admin = isAdmin() && canWrite();
+  const admin = canManage() && canWrite();
   const retired = t.status === 'retired';
   const actions = (canWrite() && !retired ? `<button class="btn btn-primary" id="reg">${svgIcon('plus')} Register part</button><button class="btn btn-amber" id="mnt">${svgIcon('wrench')} Log maintenance</button>` : '')
     + (admin ? `<button class="btn btn-outline" id="edit-tool">${svgIcon('edit')} Edit tool</button>` : '');
@@ -1205,7 +1209,7 @@ function renderUsers() {
     const n = data.parts.filter(p => p.createdBy === u.id).length;
     const row = el(`<div class="user-row">
       <div class="user-avatar">${esc(ini)}</div>
-      <div class="user-info"><div class="uname">${esc(u.name)} ${u.role==='admin' ? '<span class="badge badge-blue" style="margin-left:4px">Admin</span>' : ''}</div>
+      <div class="user-info"><div class="uname">${esc(u.name)} ${u.role==='admin' ? '<span class="badge badge-blue" style="margin-left:4px">Admin</span>' : u.role==='manager' ? '<span class="badge badge-cyan" style="margin-left:4px">Production</span>' : ''}</div>
       <div class="ulogin">@${esc(u.login)} · ${n} part${n===1?'':'s'} registered</div>
       <div style="display:flex;gap:4px;margin-top:6px;flex-wrap:wrap">${u.role==='admin' ? '<span class="badge badge-gray" style="font-size:9px">All facilities</span>' : (userFacilities(u).map(f => `<span class="badge badge-blue" style="font-size:9px;padding:1px 6px">${f}</span>`).join('') || '<span class="badge badge-amber" style="font-size:9px">No facility access</span>')}</div></div>
       <div class="btn-group">${canWrite() ? `<button class="btn btn-outline btn-sm" data-e>${svgIcon('edit')} Edit</button>
@@ -1517,7 +1521,7 @@ function openProjectForm(p) {
     <div class="form-group"><label>Description (optional)</label><textarea id="pf-desc" style="min-height:56px">${esc(p.description||'')}</textarea></div>
     <div id="pf-err"></div>
     <div class="modal-actions">
-      ${!isNew ? `<button class="btn btn-danger" data-del style="margin-right:auto">Delete project</button>` : ''}
+      ${!isNew && isAdmin() ? `<button class="btn btn-danger" data-del style="margin-right:auto">Delete project</button>` : ''}
       <button class="btn btn-outline" data-c>Cancel</button><button class="btn btn-primary" data-ok>${isNew ? 'Create project' : 'Save changes'}</button></div>`);
   m.querySelector('[data-c]').onclick = closeModal;
   m.querySelector('[data-ok]').onclick = async () => {
@@ -1553,7 +1557,7 @@ function openToolForm(t, projectId) {
       <div class="form-group"><label>Type</label><select id="tf-type">${TOOL_TYPES.map(x => `<option ${t.type===x?'selected':''}>${x}</option>`).join('')}</select></div>
     </div>
     <div class="grid2">
-      <div class="form-group"><label>Facility (location)</label><select id="tf-fac"><option value="">Select facility…</option>${FACILITIES.map(f => `<option ${t.facility===f?'selected':''}>${f}</option>`).join('')}</select></div>
+      <div class="form-group"><label>Facility (location)</label><select id="tf-fac"><option value="">Select facility…</option>${userFacilities(state.currentUser).map(f => `<option ${t.facility===f?'selected':''}>${f}</option>`).join('')}</select></div>
       <div></div>
     </div>
     <div class="form-group"><label>Tool name</label><input type="text" id="tf-name" value="${esc(t.name||'')}" placeholder="e.g. Wing skin lower mould"></div>
@@ -1571,7 +1575,7 @@ function openToolForm(t, projectId) {
     </div>
     <div id="tf-err"></div>
     <div class="modal-actions">
-      ${!isNew ? `<button class="btn btn-danger" data-del style="margin-right:auto">Delete tool</button>` : ''}
+      ${!isNew && isAdmin() ? `<button class="btn btn-danger" data-del style="margin-right:auto">Delete tool</button>` : ''}
       <button class="btn btn-outline" data-c>Cancel</button><button class="btn btn-primary" data-ok>${isNew ? 'Add tool' : 'Save changes'}</button></div>`, { wide:true });
   m.querySelector('[data-c]').onclick = closeModal;
   m.querySelector('[data-ok]').onclick = async () => {
@@ -1617,7 +1621,7 @@ function openUserForm(u) {
     <div class="form-group"><label>Facility access</label>
       <div style="display:flex;gap:18px;flex-wrap:wrap;padding:6px 0">${FACILITIES.map(f => `<label style="display:flex;align-items:center;text-transform:none;letter-spacing:0;font-size:12px;color:var(--text);margin:0;cursor:pointer"><input type="checkbox" class="uf-fac" value="${f}" ${(isNew ? false : userFacilities(u).includes(f)) ? 'checked' : ''}> ${f}</label>`).join('')}</div>
       <div class="hint">The user only sees tools, records and alerts from the ticked facilities. Administrators always see all.</div></div>
-    <div class="form-group"><label>Role</label><select id="uf-role" ${lockedAdmin?'disabled':''}><option value="user">User — registers parts and maintenance</option><option value="admin" ${u.role==='admin'?'selected':''}>Administrator — also manages projects, tools and users</option></select></div>
+    <div class="form-group"><label>Role</label><select id="uf-role" ${lockedAdmin?'disabled':''}><option value="user">Operator — registers parts and maintenance</option><option value="manager" ${u.role==='manager'?'selected':''}>Production — also creates and edits projects and tools</option><option value="admin" ${u.role==='admin'?'selected':''}>Administrator — everything, including users and deleting</option></select></div>
     <div id="uf-err"></div>
     <div class="modal-actions"><button class="btn btn-outline" data-c>Cancel</button><button class="btn btn-primary" data-ok>${isNew ? 'Create user' : 'Save changes'}</button></div>`);
   m.querySelector('[data-c]').onclick = closeModal;
