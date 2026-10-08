@@ -175,6 +175,8 @@ tr.click{cursor:pointer}
 .part-card{background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius);padding:12px 12px 10px;position:relative}
 .part-card .pc-top{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px}
 .part-card .cyc{font-size:9px;font-weight:700;color:var(--text3);letter-spacing:0.1em;text-transform:uppercase}
+.sn-box{background:var(--surface2);border:1px solid var(--cyan-border);border-radius:var(--radius);padding:14px;font-size:22px;font-weight:700;color:var(--cyan);letter-spacing:0.08em;text-align:center;word-break:break-all}
+.part-card .op{font-size:11px;color:var(--text);margin-top:4px;font-weight:600;letter-spacing:0.04em}
 .part-card .sn{font-size:15px;font-weight:700;color:var(--cyan);letter-spacing:0.04em;word-break:break-all}
 .part-card .when{font-size:11px;color:var(--text);margin-top:6px}
 .part-card .who{font-size:10px;color:var(--text3);margin-top:2px}
@@ -429,7 +431,7 @@ const Store = {
             seedUsers(d);
             fn(d);
             const by = state.currentUser ? ` (${state.currentUser.login})` : '';
-            this.sha = await ghWrite(d, remote.sha, (message || 'Tool tracking update') + by);
+            this.sha = await ghWrite(d, remote.sha, ((typeof message === 'function' ? message() : message) || 'Tool tracking update') + by);
             this.apply(d);
             state.mode = 'github'; state.syncError = ''; state.lastSync = new Date();
             return true;
@@ -554,6 +556,28 @@ function canSeeTool(t) { return !!t && (isAdmin() || (!!t.facility && userFacili
 function visTools() { return data.tools.filter(canSeeTool); }
 function visParts() { const ids = new Set(visTools().map(t => t.id)); return data.parts.filter(p => ids.has(p.toolId)); }
 function visProjects() { if (isAdmin()) return data.projects.slice(); const ids = new Set(visTools().map(t => t.projectId)); return data.projects.filter(p => ids.has(p.id)); }
+// ---- Serial number allocation (moulds) ----
+// Format: 5-digit project number + company code + 2-digit year + 3-digit sequence, e.g. 00014HV26001.
+// The sequence restarts each year and is counted per project and company.
+const FAC_CODE = { OSS:'OS', OHV:'HV', OMAR:'MA' };
+function isMould(t) { return !!t && t.type === 'Mould'; }
+function projectNumber(p) { return p && /^\d{1,5}$/.test(String(p.number || '')) ? String(p.number).padStart(5, '0') : ''; }
+function mouldBlock(t) {
+  if (!projectNumber(data.projects.find(x => x.id === t.projectId))) return 'This project has no project number, so serial numbers cannot be allocated. The administrator must add the 5-digit project number in Edit project.';
+  if (!FAC_CODE[t.facility]) return 'This mould has no facility, so serial numbers cannot be allocated. The administrator must set it in Edit tool.';
+  return '';
+}
+function nextSN(t, year, d = data) {
+  const pn = projectNumber(d.projects.find(x => x.id === t.projectId));
+  const cc = FAC_CODE[t.facility];
+  if (!pn || !cc) return { error: 'Serial number cannot be allocated: project number or facility missing.' };
+  const prefix = pn + cc + String(year % 100).padStart(2, '0');
+  const re = new RegExp('^' + prefix + '(\\d{3})$');
+  let max = 0;
+  d.parts.forEach(p => { const r = re.exec(p.sn || ''); if (r) max = Math.max(max, +r[1]); });
+  if (max >= 999) return { error: `All 999 serial numbers for ${prefix} are used.` };
+  return { sn: prefix + String(max + 1).padStart(3, '0') };
+}
 function facBadge(f) { return f ? `<span class="badge badge-blue">${esc(f)}</span>` : `<span class="badge badge-red" title="Assign a facility so users can see this tool">No facility</span>`; }
 
 function partsOf(toolId) { return data.parts.filter(p => p.toolId === toolId); }
@@ -886,7 +910,7 @@ function renderProjects() {
     const facs = FACILITIES.filter(f => tools.some(x => x.facility === f));
     const nAl = tools.map(t => toolStats(t).status.lvl).filter(l => l >= 1).length;
     const card = el(`<button class="proj-card ${p.status==='closed'?'closed':''}">
-      <div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><span class="pc-code">${esc(p.code || '')}</span>
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><span class="pc-code">${projectNumber(p) ? esc(projectNumber(p)) : '<span style="color:var(--amber)">NO PROJECT Nº</span>'}${p.code ? ' · ' + esc(p.code) : ''}</span>
       ${p.status==='closed' ? '<span class="badge badge-gray">Closed</span>' : nAl ? `<span class="badge badge-amber">${nAl} alert${nAl>1?'s':''}</span>` : ''}</div>
       <div class="pc-name">${esc(p.name)}</div>
       <div class="pc-desc">${esc(p.client ? p.client + (p.description ? ' — ' : '') : '')}${esc(p.description || '')}</div>
@@ -905,7 +929,7 @@ function renderProject() {
   if (!p) return el(`<div>${header('Project not found', 'It may have been removed.', [{label:'Projects', nav:{page:'projects'}}])}</div>`);
   const admin = isAdmin() && canWrite();
   const tools = visTools().filter(t => t.projectId === p.id).sort((a,b) => (a.status==='retired') - (b.status==='retired') || (a.code||'').localeCompare(b.code||''));
-  const div = el(`<div>${header(`<span class="code">${esc(p.code||'')}</span> ${esc(p.name)}`,
+  const div = el(`<div>${header(`<span class="code">${esc(projectNumber(p) || p.code || '')}</span> ${esc(p.name)}`,
       esc([p.client, p.description].filter(Boolean).join(' — ')) || 'Tools used in this project',
       [{label:'Projects', nav:{page:'projects'}}, {label:p.name}],
       (admin ? `<button class="btn btn-outline" id="edit-proj">${svgIcon('edit')} Edit project</button><button class="btn btn-primary" id="add-tool">${svgIcon('plus')} Add tool</button>` : ''))}
@@ -987,7 +1011,7 @@ function renderTool() {
     </div>
     <div class="card section">
       <div class="card-title">Production records <span class="badge badge-gray">${s.total}</span>
-        <div class="right"><input type="search" id="sn-filter" placeholder="Search serial number" value="${esc(state.snFilter)}" style="width:220px;padding:6px 10px;font-size:11px"></div></div>
+        <div class="right"><input type="search" id="sn-filter" placeholder="Search SN or OP number" value="${esc(state.snFilter)}" style="width:220px;padding:6px 10px;font-size:11px"></div></div>
       <div id="part-grid"></div>
     </div>
     <div class="card" style="padding:0" id="mhist"></div>
@@ -1027,9 +1051,9 @@ function fillPartGrid(box, t) {
   const cycleNo = new Map(all.map((p,i) => [p.id, i+1]));
   const q = state.snFilter.trim().toLowerCase();
   let list = all.slice().reverse();
-  if (q) list = list.filter(p => (p.sn||'').toLowerCase().includes(q));
+  if (q) list = list.filter(p => (p.sn||'').toLowerCase().includes(q) || (p.op||'').toLowerCase().includes(q));
   if (!all.length) { box.appendChild(el(`<div class="empty">No parts registered with this tool yet. Use “Register part” each time a part comes off the tool.</div>`)); return; }
-  if (!list.length) { box.appendChild(el(`<div class="empty">No serial number matches “${esc(state.snFilter)}”.</div>`)); return; }
+  if (!list.length) { box.appendChild(el(`<div class="empty">No serial or OP number matches “${esc(state.snFilter)}”.</div>`)); return; }
   const LIMIT = 60;
   const shown = state.showAllParts || q ? list : list.slice(0, LIMIT);
   // maintenance markers between cards
@@ -1048,6 +1072,7 @@ function fillPartGrid(box, t) {
       <div class="pc-top"><span class="cyc">Cycle #${cycleNo.get(p.id)}</span>
       ${(isAdmin() || mine) && canWrite() ? `<button class="icon-btn" title="Delete record">${svgIcon('trash')}</button>` : ''}</div>
       <div class="sn">${esc(p.sn)}</div>
+      ${p.op ? `<div class="op"><span class="muted" style="font-weight:400">OP</span> ${esc(p.op)}</div>` : ''}
       <div class="when">${fmtDateTime(p.producedAt)}</div>
       <div class="who">${esc(userName(p.createdBy))}</div>
       ${p.notes ? `<div class="note">${esc(p.notes)}</div>` : ''}
@@ -1153,11 +1178,11 @@ function renderAnalysis() {
 
 async function exportCSV() {
   const q = v => `"${String(v ?? '').replace(/"/g,'""')}"`;
-  const rows = [['Facility','Project code','Project','Tool ID','Tool name','Cycle #','Serial number','Produced at','Registered by','Notes'].map(q).join(',')];
+  const rows = [['Facility','Project code','Project','Tool ID','Tool name','Cycle #','Serial number','OP number','Produced at','Registered by','Notes'].map(q).join(',')];
   visTools().forEach(t => {
     const p = data.projects.find(x => x.id === t.projectId) || {};
     partsOf(t.id).sort((a,b)=>(a.producedAt||'').localeCompare(b.producedAt||'')).forEach((r,i) => {
-      rows.push([t.facility, p.code, p.name, t.code, t.name, i+1, r.sn, fmtDateTime(r.producedAt), userName(r.createdBy), r.notes].map(q).join(','));
+      rows.push([t.facility, p.code, p.name, t.code, t.name, i+1, r.sn, r.op, fmtDateTime(r.producedAt), userName(r.createdBy), r.notes].map(q).join(','));
     });
   });
   const csv = '\uFEFF' + rows.join('\r\n');
@@ -1312,9 +1337,9 @@ function openRegisterPart(tool) {
       <div class="form-group"><label>Tool</label><select id="rp-tool"></select></div></div>`;
   const m = openModal(`
     <h3>Register part</h3>
-    <div class="modal-desc" id="rp-desc">${tool ? `Tool <strong style="color:var(--text)">${esc(tool.code)} — ${esc(tool.name)}</strong> · ${esc(projectName(tool.projectId))}` : 'Choose the tool the part was produced in.'}</div>
+    <div class="modal-desc" id="rp-desc"></div>
     ${toolPicker}
-    <div class="form-group"><label for="rp-sn">Part serial number</label><input type="text" id="rp-sn" class="sn-input" placeholder="SN#" autocomplete="off" autocapitalize="characters" autofocus></div>
+    <div id="rp-fields"></div>
     <div class="form-group"><label for="rp-dt">Date &amp; time produced</label><input type="datetime-local" id="rp-dt" value="${toLocalInput(now)}"><div class="hint">Set to now. Change it only if the part was made earlier.</div></div>
     <div class="form-group"><label for="rp-notes">Notes (optional)</label><textarea id="rp-notes" placeholder="Batch, shift, observations…" style="min-height:56px"></textarea></div>
     <div id="rp-warn"></div>
@@ -1324,50 +1349,128 @@ function openRegisterPart(tool) {
       <button class="btn btn-primary" data-ok>Save part</button>
     </div>`);
   let current = tool;
-  if (!tool) {
+  let dupConfirmed = '';
+  const warn = m.querySelector('#rp-warn');
+  const dtIn = m.querySelector('#rp-dt');
+  const prodDate = () => { const v = dtIn.value; return (!v || v === dtIn.defaultValue) ? new Date() : new Date(v); };
+
+  // Mould: number allocated by the tool. Other tools: operator types SN.
+  const setTool = (t) => {
+    current = t; dupConfirmed = ''; warn.innerHTML = '';
+    const desc = m.querySelector('#rp-desc');
+    desc.innerHTML = t ? `Tool <strong style="color:var(--text)">${esc(t.code)} — ${esc(t.name)}</strong> · ${esc(projectName(t.projectId))}${t.facility ? ' · ' + esc(t.facility) : ''}` : 'Choose the tool the part was produced in.';
+    const box = m.querySelector('#rp-fields');
+    const block = t && isMould(t) ? mouldBlock(t) : '';
+    m.querySelectorAll('[data-ok],[data-more]').forEach(b => b.disabled = !!block || !t);
+    if (t && isMould(t)) {
+      box.innerHTML = block ? `<div class="alert alert-error">${esc(block)}</div>` : `
+        <div class="form-group"><label>Part serial number <span style="color:var(--text3);text-transform:none;letter-spacing:0;font-weight:400">(allocated automatically)</span></label>
+          <div class="sn-box" id="rp-prev"></div>
+          <div class="hint">Project ${esc(projectNumber(data.projects.find(p => p.id === t.projectId)))} · ${esc(FAC_CODE[t.facility])} · year + sequence. Confirmed when you save.</div></div>
+        <div class="form-group"><label for="rp-op">OP number (optional)</label><input type="text" id="rp-op" placeholder="OP#" autocomplete="off" autocapitalize="characters"></div>`;
+      updatePreview();
+      const op = m.querySelector('#rp-op'); if (op) { op.focus(); op.addEventListener('keydown', e => { if (e.key === 'Enter') save(true); }); }
+    } else {
+      box.innerHTML = `<div class="grid2">
+        <div class="form-group"><label for="rp-sn">Part serial number</label><input type="text" id="rp-sn" class="sn-input" placeholder="SN#" autocomplete="off" autocapitalize="characters"></div>
+        <div class="form-group"><label for="rp-op">OP number (optional)</label><input type="text" id="rp-op" class="sn-input" placeholder="OP#" autocomplete="off" autocapitalize="characters" style="color:var(--text)!important"></div></div>`;
+      const sn = m.querySelector('#rp-sn');
+      sn.focus();
+      sn.addEventListener('keydown', e => { if (e.key === 'Enter') m.querySelector('#rp-op').focus(); });
+      m.querySelector('#rp-op').addEventListener('keydown', e => { if (e.key === 'Enter') save(true); });
+    }
+  };
+  const updatePreview = () => {
+    const pv = m.querySelector('#rp-prev'); if (!pv || !current) return;
+    const d = prodDate(); if (isNaN(d)) { pv.textContent = '—'; return; }
+    const r = nextSN(current, d.getFullYear());
+    pv.textContent = r.sn || '—';
+    if (r.error) warn.innerHTML = `<div class="alert alert-error">${esc(r.error)}</div>`;
+  };
+  dtIn.addEventListener('change', updatePreview);
+
+  if (tool) setTool(tool);
+  else {
     const ps = m.querySelector('#rp-proj'), ts = m.querySelector('#rp-tool');
-    const fill = () => { ts.innerHTML = usable.filter(t => t.projectId === ps.value).map(t => `<option value="${t.id}">${esc(t.code)} — ${esc(t.name)}${t.facility ? ' (' + esc(t.facility) + ')' : ''}</option>`).join(''); current = usable.find(t => t.id === ts.value); };
-    ps.onchange = fill; ts.onchange = () => { current = usable.find(t => t.id === ts.value); };
+    const fill = () => { ts.innerHTML = usable.filter(t => t.projectId === ps.value).map(t => `<option value="${t.id}">${esc(t.code)} — ${esc(t.name)}${t.facility ? ' (' + esc(t.facility) + ')' : ''}${isMould(t) ? ' · mould' : ''}</option>`).join(''); setTool(usable.find(t => t.id === ts.value)); };
+    ps.onchange = fill; ts.onchange = () => setTool(usable.find(t => t.id === ts.value));
     fill();
   }
-  let dupConfirmed = '';
   m.querySelector('[data-c]').onclick = closeModal;
+
   const save = async (again) => {
-    const sn = m.querySelector('#rp-sn').value.trim();
-    const dtv = m.querySelector('#rp-dt').value;
-    const notes = m.querySelector('#rp-notes').value.trim();
-    const warn = m.querySelector('#rp-warn');
     if (!current) { warn.innerHTML = '<div class="alert alert-error">Choose a tool.</div>'; return; }
-    if (!sn) { warn.innerHTML = '<div class="alert alert-error">Enter the part serial number.</div>'; m.querySelector('#rp-sn').focus(); return; }
-    const dt = (!dtv || dtv === m.querySelector('#rp-dt').defaultValue) ? new Date() : new Date(dtv);
+    const mould = isMould(current);
+    const opIn = m.querySelector('#rp-op');
+    const op = opIn ? opIn.value.trim() : '';
+    const notes = m.querySelector('#rp-notes').value.trim();
+    const dt = prodDate();
     if (isNaN(dt)) { warn.innerHTML = '<div class="alert alert-error">Enter a valid date and time.</div>'; return; }
     if (dt.getTime() > Date.now() + 5*60000) { warn.innerHTML = '<div class="alert alert-error">The production date is in the future.</div>'; return; }
-    const dup = data.parts.find(p => p.toolId === current.id && (p.sn||'').toLowerCase() === sn.toLowerCase());
-    if (dup && dupConfirmed !== sn.toLowerCase()) {
-      dupConfirmed = sn.toLowerCase();
-      warn.innerHTML = `<div class="alert alert-warning">Serial number ${esc(sn)} is already recorded on this tool (${fmtDateTime(dup.producedAt)}). Save again to record it anyway.</div>`;
+    let sn = '';
+    if (!mould) {
+      sn = m.querySelector('#rp-sn').value.trim();
+      if (!sn) { warn.innerHTML = '<div class="alert alert-error">Enter the part serial number.</div>'; m.querySelector('#rp-sn').focus(); return; }
+      const dup = data.parts.find(p => p.toolId === current.id && (p.sn||'').toLowerCase() === sn.toLowerCase());
+      if (dup && dupConfirmed !== sn.toLowerCase()) {
+        dupConfirmed = sn.toLowerCase();
+        warn.innerHTML = `<div class="alert alert-warning">Serial number ${esc(sn)} is already recorded on this tool (${fmtDateTime(dup.producedAt)}). Save again to record it anyway.</div>`;
+        return;
+      }
+    }
+    const t = current;
+    const before = toolStats(t).status.lvl;
+    const rec = { id: uid(), toolId: t.id, projectId: t.projectId, sn, op, snAuto: mould, producedAt: dt.toISOString(), notes, createdBy: state.currentUser.id, createdAt: nowISO() };
+    m.querySelectorAll('.modal-actions button').forEach(b => b.disabled = true);
+    let ok;
+    if (mould) {
+      // The number is worked out on the latest GitHub data, so two computers never get the same one
+      ok = await Store.mutate(d => {
+        const r = nextSN(t, dt.getFullYear(), d);
+        if (r.error) throw new Error(r.error);
+        rec.sn = r.sn; d.parts.push(rec);
+      }, () => `Part ${rec.sn}${op ? ' OP ' + op : ''} on ${t.code}`);
+    } else {
+      ok = await Store.put('parts', rec, `Part ${sn}${op ? ' OP ' + op : ''} on ${t.code}`);
+    }
+    m.querySelectorAll('.modal-actions button').forEach(b => b.disabled = false);
+    if (!ok) { if (mould) updatePreview(); return; }
+    const afterS = toolStats(t);
+    toast(`Part ${rec.sn} registered on ${t.code} — cycle #${afterS.total}.`);
+    if (afterS.status.lvl >= 1 && afterS.status.lvl >= before) toast(`${t.code}: ${afterS.status.reasons[0]}`, afterS.status.lvl >= 2 ? 'error' : 'warn', 7000);
+
+    if (mould && !again) {
+      // keep the allocated number on screen so the operator can mark the part
+      const mm = m.querySelector('.modal');
+      mm.innerHTML = `<h3>Serial number allocated</h3>
+        <div class="modal-desc">Mark this number on the part.</div>
+        <div class="sn-box" style="font-size:30px;padding:22px">${esc(rec.sn)}</div>
+        <table style="margin-top:14px"><tbody>
+          <tr><td class="muted">Tool</td><td>${esc(t.code)} — ${esc(t.name)}</td></tr>
+          ${op ? `<tr><td class="muted">OP number</td><td>${esc(op)}</td></tr>` : ''}
+          <tr><td class="muted">Produced</td><td>${fmtDateTime(rec.producedAt)}</td></tr>
+          <tr><td class="muted">Cycle</td><td>#${afterS.total}</td></tr>
+        </tbody></table>
+        <div class="modal-actions"><button class="btn btn-outline" data-another>Register another</button><button class="btn btn-primary" data-done>Done</button></div>`;
+      mm.querySelector('[data-done]').onclick = closeModal;
+      mm.querySelector('[data-another]').onclick = () => openRegisterPart(t);
+      mm.querySelector('[data-done]').focus();
       return;
     }
-    const before = toolStats(current).status.lvl;
-    const rec = { id: uid(), toolId: current.id, projectId: current.projectId, sn, producedAt: dt.toISOString(), notes, createdBy: state.currentUser.id, createdAt: nowISO() };
-    m.querySelectorAll('.modal-actions button').forEach(b => b.disabled = true);
-    const ok = await Store.put('parts', rec, `Part ${sn} on ${current.code}`);
-    m.querySelectorAll('.modal-actions button').forEach(b => b.disabled = false);
-    if (!ok) return;
-    const after = toolStats(current);
-    toast(`Part ${sn} registered on ${current.code} — cycle #${after.total}.`);
-    if (after.status.lvl >= 1 && after.status.lvl >= before) toast(`${current.code}: ${after.status.reasons[0]}`, after.status.lvl >= 2 ? 'error' : 'warn', 7000);
     if (again) {
       dupConfirmed = '';
-      m.querySelector('#rp-sn').value = ''; m.querySelector('#rp-notes').value = '';
-      { const d = m.querySelector('#rp-dt'); d.value = d.defaultValue = toLocalInput(new Date()); }
-      warn.innerHTML = `<div class="alert alert-success">Saved ${esc(sn)}. Enter the next serial number.</div>`;
-      m.querySelector('#rp-sn').focus();
+      m.querySelector('#rp-notes').value = '';
+      dtIn.value = dtIn.defaultValue = toLocalInput(new Date());
+      if (opIn) opIn.value = '';
+      warn.innerHTML = mould
+        ? `<div class="alert alert-success">Allocated <strong style="font-size:15px;letter-spacing:0.05em">${esc(rec.sn)}</strong>${op ? ' · OP ' + esc(op) : ''}. Mark it on the part.</div>`
+        : `<div class="alert alert-success">Saved ${esc(sn)}. Enter the next serial number.</div>`;
+      if (mould) { updatePreview(); opIn && opIn.focus(); }
+      else { m.querySelector('#rp-sn').value = ''; m.querySelector('#rp-sn').focus(); }
     } else closeModal();
   };
   m.querySelector('[data-ok]').onclick = () => save(false);
   m.querySelector('[data-more]').onclick = () => save(true);
-  m.querySelector('#rp-sn').addEventListener('keydown', e => { if (e.key === 'Enter') save(true); });
 }
 
 // ---- Maintenance ----
@@ -1403,7 +1506,10 @@ function openProjectForm(p) {
   const m = openModal(`<h3>${isNew ? 'New project' : 'Edit project'}</h3>
     <div class="modal-desc">${isNew ? 'After creating the project, add the tools used in it.' : 'Changes apply for every user straight away.'}</div>
     <div class="grid2">
-      <div class="form-group"><label>Project code</label><input type="text" id="pf-code" value="${esc(p.code||'')}" placeholder="e.g. P-2026-014" autofocus></div>
+      <div class="form-group"><label>Project number (5 digits)</label><input type="text" id="pf-num" inputmode="numeric" maxlength="5" value="${esc(projectNumber(p))}" placeholder="e.g. 00014" autofocus><div class="hint">Used at the start of mould serial numbers.</div></div>
+      <div class="form-group"><label>Project code (optional)</label><input type="text" id="pf-code" value="${esc(p.code||'')}" placeholder="e.g. P-2026-014"></div>
+    </div>
+    <div class="grid2">
       <div class="form-group"><label>Status</label><select id="pf-status"><option value="active">Active</option><option value="closed" ${p.status==='closed'?'selected':''}>Closed</option></select></div>
     </div>
     <div class="form-group"><label>Project name</label><input type="text" id="pf-name" value="${esc(p.name||'')}" placeholder="Project name"></div>
@@ -1417,9 +1523,13 @@ function openProjectForm(p) {
   m.querySelector('[data-ok]').onclick = async () => {
     const g = s => m.querySelector(s).value.trim();
     const name = g('#pf-name'), code = g('#pf-code');
+    const numRaw = g('#pf-num');
+    if (!/^\d{1,5}$/.test(numRaw)) { m.querySelector('#pf-err').innerHTML = '<div class="alert alert-error">Enter the project number: up to 5 digits.</div>'; return; }
+    const number = numRaw.padStart(5, '0');
+    if (data.projects.some(x => x.id !== p.id && projectNumber(x) === number)) { m.querySelector('#pf-err').innerHTML = '<div class="alert alert-error">Another project already uses this project number.</div>'; return; }
     if (!name) { m.querySelector('#pf-err').innerHTML = '<div class="alert alert-error">Enter a project name.</div>'; return; }
     if (code && data.projects.some(x => x.id !== p.id && (x.code||'').toLowerCase() === code.toLowerCase())) { m.querySelector('#pf-err').innerHTML = '<div class="alert alert-error">Another project already uses this code.</div>'; return; }
-    const rec = Object.assign({}, p, { id: p.id || uid(), code, name, client: g('#pf-client'), description: g('#pf-desc'), status: g('#pf-status'),
+    const rec = Object.assign({}, p, { id: p.id || uid(), number, code, name, client: g('#pf-client'), description: g('#pf-desc'), status: g('#pf-status'),
       createdAt: p.createdAt || nowISO(), updatedAt: nowISO() });
     if (await Store.put('projects', rec, `Project ${name}`)) { closeModal(); toast(isNew ? `Project ${name} created.` : 'Project updated.'); if (isNew) nav('project', { projectId: rec.id }); }
   };
