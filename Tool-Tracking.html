@@ -584,7 +584,11 @@ function nextSN(t, year, d = data) {
 }
 function facBadge(f) { return f ? `<span class="badge badge-blue">${esc(f)}</span>` : `<span class="badge badge-red" title="Assign a facility so users can see this tool">No facility</span>`; }
 
-function partsOf(toolId) { return data.parts.filter(p => p.toolId === toolId); }
+// A mandrel's uses are the mould parts it was ticked on
+function partsOf(toolId) { return data.parts.filter(p => p.toolId === toolId || (Array.isArray(p.mandrelIds) && p.mandrelIds.includes(toolId))); }
+function isMandrel(t) { return !!t && t.type === 'Mandrel'; }
+function mandrelsOf(mouldId) { return data.tools.filter(x => isMandrel(x) && x.mouldId === mouldId).sort((a,b) => (a.code||'').localeCompare(b.code||'')); }
+function toolCode(id) { const x = data.tools.find(y => y.id === id); return x ? x.code : '—'; }
 function maintOf(toolId) { return data.maint.filter(m => m.toolId === toolId).sort((a,b) => (b.performedAt||'').localeCompare(a.performedAt||'')); }
 
 function toolStats(t) {
@@ -932,7 +936,17 @@ function renderProject() {
   const p = visProjects().find(x => x.id === state.projectId);
   if (!p) return el(`<div>${header('Project not found', 'It may have been removed.', [{label:'Projects', nav:{page:'projects'}}])}</div>`);
   const admin = canManage() && canWrite();
-  const tools = visTools().filter(t => t.projectId === p.id).sort((a,b) => (a.status==='retired') - (b.status==='retired') || (a.code||'').localeCompare(b.code||''));
+  const tools = (() => {
+    const all = visTools().filter(t => t.projectId === p.id);
+    const sorter = (a,b) => (a.status==='retired') - (b.status==='retired') || (a.code||'').localeCompare(b.code||'');
+    const ids = new Set(all.map(x => x.id));
+    const out = [];
+    all.filter(x => !(isMandrel(x) && ids.has(x.mouldId))).sort(sorter).forEach(x => {
+      out.push(x);
+      if (isMould(x)) all.filter(y => isMandrel(y) && y.mouldId === x.id).sort(sorter).forEach(y => out.push(y));
+    });
+    return out;
+  })();
   const div = el(`<div>${header(`<span class="code">${esc(projectNumber(p) || p.code || '')}</span> ${esc(p.name)}`,
       esc([p.client, p.description].filter(Boolean).join(' — ')) || 'Tools used in this project',
       [{label:'Projects', nav:{page:'projects'}}, {label:p.name}],
@@ -953,15 +967,15 @@ function renderProject() {
   tools.forEach(t => {
     const s = toolStats(t);
     const tr = el(`<table><tr class="click">
-      <td><strong style="color:var(--cyan)">${esc(t.code)}</strong></td>
+      <td>${isMandrel(t) ? '<span style="color:var(--text3);margin-right:6px">↳</span>' : ''}<strong style="color:${isMandrel(t) ? 'var(--text)' : 'var(--cyan)'}">${esc(t.code)}</strong></td>
       <td>${esc(t.name)}</td>
       <td>${facBadge(t.facility)}</td>
-      <td class="muted">${esc(t.type || '—')}</td>
+      <td class="muted">${isMandrel(t) ? `Mandrel <span style="color:var(--text3)">· ${esc(toolCode(t.mouldId))}</span>` : esc(t.type || '—')}</td>
       <td class="num"><strong>${s.total}</strong>${t.lifeCycles ? `<span class="muted"> / ${t.lifeCycles}</span>` : ''}</td>
       <td>${t.maintCycles ? meter(s.since, t.maintCycles, t.warnPct) : `<span class="muted">${s.since} parts</span>`}</td>
       <td class="muted" style="white-space:nowrap">${s.lastUse ? fmtDateTime(s.lastUse) : 'Never'}</td>
       <td><span class="badge badge-${s.status.cls}">${s.status.label}</span></td>
-      <td style="text-align:right">${t.status !== 'retired' && canWrite() ? `<button class="btn btn-success btn-sm" data-add="1">${svgIcon('plus')} Part</button>` : ''}</td>
+      <td style="text-align:right">${t.status !== 'retired' && canWrite() && !isMandrel(t) ? `<button class="btn btn-success btn-sm" data-add="1">${svgIcon('plus')} Part</button>` : ''}</td>
     </tr></table>`).querySelector('tr');
     tr.onclick = e => { if (e.target.closest('[data-add]')) { e.stopPropagation(); openRegisterPart(t); return; } nav('tool', { toolId: t.id }); };
     tb.appendChild(tr);
@@ -980,13 +994,16 @@ function renderTool() {
   const s = toolStats(t);
   const admin = canManage() && canWrite();
   const retired = t.status === 'retired';
-  const actions = (canWrite() && !retired ? `<button class="btn btn-primary" id="reg">${svgIcon('plus')} Register part</button><button class="btn btn-amber" id="mnt">${svgIcon('wrench')} Log maintenance</button>` : '')
+  const mandrel = isMandrel(t);
+  const mouldT = mandrel ? data.tools.find(x => x.id === t.mouldId) : null;
+  const actions = (canWrite() && !retired ? (mandrel ? '' : `<button class="btn btn-primary" id="reg">${svgIcon('plus')} Register part</button>`) + `<button class="btn btn-amber" id="mnt">${svgIcon('wrench')} Log maintenance</button>` : '')
     + (admin ? `<button class="btn btn-outline" id="edit-tool">${svgIcon('edit')} Edit tool</button>` : '');
   const div = el(`<div>
     ${header(`<span class="code">${esc(t.code)}</span> ${esc(t.name)}`,
       (t.facility ? esc(t.facility) + ' · ' : '') + (esc([t.type, t.description].filter(Boolean).join(' — ')) || 'Tool record'),
       [{label:'Projects', nav:{page:'projects'}}, {label:p.name, nav:{page:'project', projectId:p.id}}, {label:t.code}], actions)}
     ${s.status.lvl >= 1 ? `<div class="alert alert-${s.status.lvl >= 2 ? 'error' : 'warning'}"><strong>${s.status.label}.</strong> ${s.status.reasons.map(esc).join(' · ')}</div>` : ''}
+    ${mandrel ? `<div class="alert alert-info">Mandrel used with mould <a id="go-mould" style="color:var(--blue);cursor:pointer;text-decoration:underline">${esc(mouldT ? mouldT.code + ' — ' + mouldT.name : 'not found')}</a>. Its uses are counted when it is ticked while registering a part on that mould.</div>` : ''}
     ${retired ? `<div class="alert alert-info">This tool is retired. New parts can't be registered until an administrator returns it to service.</div>` : ''}
     <div class="stats-row">
       <div class="stat-card"><div class="label">Total parts</div><div class="value">${s.total}${t.lifeCycles ? `<small> / ${t.lifeCycles}</small>` : ''}</div><div class="sub">${s.firstUse ? 'First used ' + fmtDate(s.firstUse) : 'Not used yet'}</div></div>
@@ -1006,6 +1023,8 @@ function renderTool() {
         <table><tbody>
           <tr><td class="muted">Project</td><td>${esc(p.name)}</td></tr>
           <tr><td class="muted">Facility</td><td>${facBadge(t.facility)}</td></tr>
+          ${mandrel ? `<tr><td class="muted">Used with mould</td><td>${esc(mouldT ? mouldT.code : '—')}</td></tr>` : ''}
+          ${isMould(t) ? `<tr><td class="muted">Mandrels</td><td>${mandrelsOf(t.id).filter(canSeeTool).length}</td></tr>` : ''}
           <tr><td class="muted">In service since</td><td>${t.inServiceAt ? fmtDate(t.inServiceAt) : '—'}</td></tr>
           <tr><td class="muted">Maintenance events</td><td>${s.maintCount}</td></tr>
           <tr><td class="muted">Avg parts between maint.</td><td>${s.avgInterval != null ? Math.round(s.avgInterval) : '—'}</td></tr>
@@ -1013,6 +1032,7 @@ function renderTool() {
         </tbody></table>
       </div>
     </div>
+    ${isMould(t) ? `<div class="card section" style="padding:0" id="mandrels"></div>` : ''}
     <div class="card section">
       <div class="card-title">Production records <span class="badge badge-gray">${s.total}</span>
         <div class="right"><input type="search" id="sn-filter" placeholder="Search SN or OP number" value="${esc(state.snFilter)}" style="width:220px;padding:6px 10px;font-size:11px"></div></div>
@@ -1024,6 +1044,27 @@ function renderTool() {
   if (div.querySelector('#reg')) div.querySelector('#reg').onclick = () => openRegisterPart(t);
   if (div.querySelector('#mnt')) div.querySelector('#mnt').onclick = () => openMaintForm(t);
   if (div.querySelector('#edit-tool')) div.querySelector('#edit-tool').onclick = () => openToolForm(t, t.projectId);
+  const gm = div.querySelector('#go-mould'); if (gm && mouldT) gm.onclick = () => nav('tool', { toolId: mouldT.id });
+  const mb = div.querySelector('#mandrels');
+  if (mb) {
+    const list = mandrelsOf(t.id).filter(canSeeTool);
+    mb.innerHTML = `<div class="card-title" style="padding:18px 20px 0">Mandrels <span class="badge badge-gray">${list.length}</span>${admin ? `<div class="right"><button class="btn btn-outline btn-sm" id="add-mandrel">${svgIcon('plus')} Add mandrel</button></div>` : ''}</div>`;
+    if (!list.length) mb.appendChild(el(`<div class="empty">No mandrels linked to this mould.${admin ? ' Use “Add mandrel” to create one.' : ''}</div>`));
+    else {
+      const w = el(`<div class="table-wrap"><table><thead><tr><th>Mandrel</th><th class="num">Uses</th><th>Since maintenance</th><th>Life used</th><th>Status</th></tr></thead><tbody></tbody></table></div>`);
+      list.forEach(x => {
+        const sx = toolStats(x);
+        const tr = el(`<table><tr class="click"><td><strong>${esc(x.code)}</strong> <span class="muted">${esc(x.name)}</span></td><td class="num">${sx.total}</td>
+          <td>${x.maintCycles ? meter(sx.since, x.maintCycles, x.warnPct) : `<span class="muted">${sx.since} uses</span>`}</td>
+          <td>${meter(sx.total, x.lifeCycles, 90, x.lifeCycles ? `${sx.total} / ${x.lifeCycles}` : `${sx.total} uses`)}</td>
+          <td><span class="badge badge-${sx.status.cls}">${sx.status.label}</span></td></tr></table>`).querySelector('tr');
+        tr.onclick = () => nav('tool', { toolId: x.id });
+        w.querySelector('tbody').appendChild(tr);
+      });
+      mb.appendChild(w);
+    }
+    const am = mb.querySelector('#add-mandrel'); if (am) am.onclick = () => openToolForm(null, t.projectId, { type:'Mandrel', mouldId: t.id });
+  }
   const fi = div.querySelector('#sn-filter');
   fi.oninput = () => { state.snFilter = fi.value; fillPartGrid(div.querySelector('#part-grid'), t); };
   fillPartGrid(div.querySelector('#part-grid'), t);
@@ -1079,6 +1120,8 @@ function fillPartGrid(box, t) {
       ${p.op ? `<div class="op"><span class="muted" style="font-weight:400">OP</span> ${esc(p.op)}</div>` : ''}
       <div class="when">${fmtDateTime(p.producedAt)}</div>
       <div class="who">${esc(userName(p.createdBy))}</div>
+      ${p.toolId !== t.id ? `<div class="who" style="color:var(--text2)">On mould ${esc(toolCode(p.toolId))}</div>` : ''}
+      ${p.toolId === t.id && Array.isArray(p.mandrelIds) && p.mandrelIds.length ? `<div class="who" style="color:var(--text2)">Mandrels: ${p.mandrelIds.map(id => esc(toolCode(id))).join(', ')}</div>` : ''}
       ${p.notes ? `<div class="note">${esc(p.notes)}</div>` : ''}
     </div>`);
     const b = card.querySelector('.icon-btn');
@@ -1147,7 +1190,8 @@ function renderAnalysis() {
 
   // Monthly production chart, last 12 months
   const scopeIds = new Set(toolsInScope.map(x => x.id));
-  const parts = data.parts.filter(p => scopeIds.has(p.toolId) && (!state.anTool || p.toolId === state.anTool));
+  const usesTool = (p, id) => p.toolId === id || (Array.isArray(p.mandrelIds) && p.mandrelIds.includes(id));
+  const parts = data.parts.filter(p => state.anTool ? usesTool(p, state.anTool) : (scopeIds.has(p.toolId) || (p.mandrelIds || []).some(id => scopeIds.has(id))));
   const months = []; const d0 = new Date(); d0.setDate(1);
   for (let i = 11; i >= 0; i--) { const d = new Date(d0.getFullYear(), d0.getMonth() - i, 1); months.push({ key:`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`, label:d.toLocaleString('en-GB',{month:'short'}), n:0 }); }
   parts.forEach(p => { const d = new Date(p.producedAt); const k = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`; const m = months.find(x => x.key === k); if (m) m.n++; });
@@ -1182,11 +1226,11 @@ function renderAnalysis() {
 
 async function exportCSV() {
   const q = v => `"${String(v ?? '').replace(/"/g,'""')}"`;
-  const rows = [['Facility','Project code','Project','Tool ID','Tool name','Cycle #','Serial number','OP number','Produced at','Registered by','Notes'].map(q).join(',')];
+  const rows = [['Facility','Project code','Project','Tool ID','Tool name','Cycle #','Serial number','OP number','Mandrels used','Recorded on mould','Produced at','Registered by','Notes'].map(q).join(',')];
   visTools().forEach(t => {
     const p = data.projects.find(x => x.id === t.projectId) || {};
     partsOf(t.id).sort((a,b)=>(a.producedAt||'').localeCompare(b.producedAt||'')).forEach((r,i) => {
-      rows.push([t.facility, p.code, p.name, t.code, t.name, i+1, r.sn, r.op, fmtDateTime(r.producedAt), userName(r.createdBy), r.notes].map(q).join(','));
+      rows.push([t.facility, p.code, p.name, t.code, t.name, i+1, r.sn, r.op, (r.mandrelIds || []).map(toolCode).join(' '), r.toolId !== t.id ? toolCode(r.toolId) : '', fmtDateTime(r.producedAt), userName(r.createdBy), r.notes].map(q).join(','));
     });
   });
   const csv = '\uFEFF' + rows.join('\r\n');
@@ -1333,7 +1377,7 @@ function confirmBox(title, bodyHtml, okLabel, onOk) {
 // ---- Register part ----
 function openRegisterPart(tool) {
   if (!canWrite()) return;
-  const usable = visTools().filter(t => t.status !== 'retired');
+  const usable = visTools().filter(t => t.status !== 'retired' && !isMandrel(t));
   if (!tool && !usable.length) { toast('No tools available at your facilities yet.', 'warn', 5000); return; }
   const now = new Date();
   const toolPicker = tool ? '' : `<div class="grid2">
@@ -1371,7 +1415,8 @@ function openRegisterPart(tool) {
         <div class="form-group"><label>Part serial number <span style="color:var(--text3);text-transform:none;letter-spacing:0;font-weight:400">(allocated automatically)</span></label>
           <div class="sn-box" id="rp-prev"></div>
           <div class="hint">Project ${esc(projectNumber(data.projects.find(p => p.id === t.projectId)))} · ${esc(FAC_CODE[t.facility])} · year + sequence. Confirmed when you save.</div></div>
-        <div class="form-group"><label for="rp-op">OP number (optional)</label><input type="text" id="rp-op" placeholder="OP#" autocomplete="off" autocapitalize="characters"></div>`;
+        <div class="form-group"><label for="rp-op">OP number (optional)</label><input type="text" id="rp-op" placeholder="OP#" autocomplete="off" autocapitalize="characters"></div>
+        ${mandrelPicker(t)}`;
       updatePreview();
       const op = m.querySelector('#rp-op'); if (op) { op.focus(); op.addEventListener('keydown', e => { if (e.key === 'Enter') save(true); }); }
     } else {
@@ -1392,6 +1437,19 @@ function openRegisterPart(tool) {
     if (r.error) warn.innerHTML = `<div class="alert alert-error">${esc(r.error)}</div>`;
   };
   dtIn.addEventListener('change', updatePreview);
+  let keepMandrels = null;   // remembered between "Save & add another"
+  function mandrelPicker(t) {
+    const list = mandrelsOf(t.id).filter(x => x.status !== 'retired' && canSeeTool(x));
+    if (!list.length) return `<div class="form-group"><label>Mandrels used</label><div class="hint" style="margin-top:0">No mandrels are linked to this mould.</div></div>`;
+    return `<div class="form-group"><label>Mandrels used</label>
+      <div style="display:flex;flex-direction:column;gap:2px;border:1px solid var(--border);border-radius:var(--radius);padding:6px 10px;background:var(--surface2);max-height:200px;overflow-y:auto">
+      ${list.map(x => { const sx = toolStats(x); return `<label style="display:flex;align-items:center;gap:4px;text-transform:none;letter-spacing:0;font-size:12px;color:var(--text);margin:0;padding:5px 0;cursor:pointer">
+        <input type="checkbox" class="rp-mand" value="${x.id}" ${keepMandrels && keepMandrels.includes(x.id) ? 'checked' : ''}>
+        <strong>${esc(x.code)}</strong> <span class="muted">${esc(x.name)}</span>
+        <span style="margin-left:auto;font-size:10px;color:var(--text3)">${sx.total}${x.lifeCycles ? ' / ' + x.lifeCycles : ''} uses</span>
+        ${sx.status.lvl >= 1 ? `<span class="badge badge-${sx.status.cls}" style="margin-left:6px;font-size:9px">${sx.status.label}</span>` : ''}</label>`; }).join('')}
+      </div><div class="hint">Tick every mandrel used for this part.</div></div>`;
+  }
 
   if (tool) setTool(tool);
   else {
@@ -1424,7 +1482,9 @@ function openRegisterPart(tool) {
     }
     const t = current;
     const before = toolStats(t).status.lvl;
-    const rec = { id: uid(), toolId: t.id, projectId: t.projectId, sn, op, snAuto: mould, producedAt: dt.toISOString(), notes, createdBy: state.currentUser.id, createdAt: nowISO() };
+    const mandrelIds = [...m.querySelectorAll('.rp-mand:checked')].map(x => x.value);
+    const mBefore = Object.fromEntries(mandrelIds.map(id => [id, toolStats(data.tools.find(x => x.id === id)).status.lvl]));
+    const rec = { id: uid(), toolId: t.id, projectId: t.projectId, sn, op, mandrelIds, snAuto: mould, producedAt: dt.toISOString(), notes, createdBy: state.currentUser.id, createdAt: nowISO() };
     m.querySelectorAll('.modal-actions button').forEach(b => b.disabled = true);
     let ok;
     if (mould) {
@@ -1441,6 +1501,7 @@ function openRegisterPart(tool) {
     if (!ok) { if (mould) updatePreview(); return; }
     const afterS = toolStats(t);
     toast(`Part ${rec.sn} registered on ${t.code} — cycle #${afterS.total}.`);
+    mandrelIds.forEach(id => { const mt = data.tools.find(x => x.id === id); if (!mt) return; const ms = toolStats(mt); if (ms.status.lvl >= 1 && ms.status.lvl >= mBefore[id]) toast(`Mandrel ${mt.code}: ${ms.status.reasons[0]}`, ms.status.lvl >= 2 ? 'error' : 'warn', 7000); });
     if (afterS.status.lvl >= 1 && afterS.status.lvl >= before) toast(`${t.code}: ${afterS.status.reasons[0]}`, afterS.status.lvl >= 2 ? 'error' : 'warn', 7000);
 
     if (mould && !again) {
@@ -1454,6 +1515,7 @@ function openRegisterPart(tool) {
           ${op ? `<tr><td class="muted">OP number</td><td>${esc(op)}</td></tr>` : ''}
           <tr><td class="muted">Produced</td><td>${fmtDateTime(rec.producedAt)}</td></tr>
           <tr><td class="muted">Cycle</td><td>#${afterS.total}</td></tr>
+          <tr><td class="muted">Mandrels</td><td>${mandrelIds.length ? mandrelIds.map(id => esc(toolCode(id))).join(', ') : '<span class="muted">None</span>'}</td></tr>
         </tbody></table>
         <div class="modal-actions"><button class="btn btn-outline" data-another>Register another</button><button class="btn btn-primary" data-done>Done</button></div>`;
       mm.querySelector('[data-done]').onclick = closeModal;
@@ -1466,6 +1528,7 @@ function openRegisterPart(tool) {
       m.querySelector('#rp-notes').value = '';
       dtIn.value = dtIn.defaultValue = toLocalInput(new Date());
       if (opIn) opIn.value = '';
+      keepMandrels = mandrelIds;
       warn.innerHTML = mould
         ? `<div class="alert alert-success">Allocated <strong style="font-size:15px;letter-spacing:0.05em">${esc(rec.sn)}</strong>${op ? ' · OP ' + esc(op) : ''}. Mark it on the part.</div>`
         : `<div class="alert alert-success">Saved ${esc(sn)}. Enter the next serial number.</div>`;
@@ -1547,18 +1610,21 @@ function openProjectForm(p) {
 }
 
 // ---- Tool form (admin) ----
-function openToolForm(t, projectId) {
-  const isNew = !t; t = t || { warnPct: 80, status: 'active' };
+function openToolForm(t, projectId, preset) {
+  const isNew = !t; t = t || Object.assign({ warnPct: 80, status: 'active' }, preset || {});
   const s = t.id ? toolStats(t) : null;
-  const m = openModal(`<h3>${isNew ? 'Add tool' : 'Edit tool'}</h3>
+  const moulds = visTools().filter(x => isMould(x) && x.projectId === projectId && x.id !== t.id);
+  const linked = t.id ? mandrelsOf(t.id) : [];
+  const m = openModal(`<h3>${isNew ? (isMandrel(t) ? 'Add mandrel' : 'Add tool') : 'Edit tool'}</h3>
     <div class="modal-desc">Project <strong style="color:var(--text)">${esc(projectName(projectId))}</strong>. Leave an interval empty if it doesn't apply.</div>
     <div class="grid2">
       <div class="form-group"><label>Tool ID</label><input type="text" id="tf-code" value="${esc(t.code||'')}" placeholder="e.g. M-0231" autofocus></div>
       <div class="form-group"><label>Type</label><select id="tf-type">${TOOL_TYPES.map(x => `<option ${t.type===x?'selected':''}>${x}</option>`).join('')}</select></div>
     </div>
     <div class="grid2">
-      <div class="form-group"><label>Facility (location)</label><select id="tf-fac"><option value="">Select facility…</option>${userFacilities(state.currentUser).map(f => `<option ${t.facility===f?'selected':''}>${f}</option>`).join('')}</select></div>
-      <div></div>
+      <div class="form-group" id="tf-mould-wrap"><label>Used with mould</label><select id="tf-mould"><option value="">Select mould…</option>${moulds.map(x => `<option value="${x.id}" ${t.mouldId===x.id?'selected':''}>${esc(x.code)} — ${esc(x.name)} (${esc(x.facility||'—')})</option>`).join('')}</select>
+        <div class="hint">${moulds.length ? 'The mandrel takes the mould’s facility and counts a use each time it is ticked on a mould part.' : 'This project has no mould yet. Create the mould first.'}</div></div>
+      <div class="form-group" id="tf-fac-wrap"><label>Facility (location)</label><select id="tf-fac"><option value="">Select facility…</option>${userFacilities(state.currentUser).map(f => `<option ${t.facility===f?'selected':''}>${f}</option>`).join('')}</select></div>
     </div>
     <div class="form-group"><label>Tool name</label><input type="text" id="tf-name" value="${esc(t.name||'')}" placeholder="e.g. Wing skin lower mould"></div>
     <div class="form-group"><label>Description (optional)</label><input type="text" id="tf-desc" value="${esc(t.description||'')}" placeholder="Material, location, supplier…"></div>
@@ -1577,28 +1643,52 @@ function openToolForm(t, projectId) {
     <div class="modal-actions">
       ${!isNew && isAdmin() ? `<button class="btn btn-danger" data-del style="margin-right:auto">Delete tool</button>` : ''}
       <button class="btn btn-outline" data-c>Cancel</button><button class="btn btn-primary" data-ok>${isNew ? 'Add tool' : 'Save changes'}</button></div>`, { wide:true });
+  const typeSel = m.querySelector('#tf-type');
+  const syncType = () => {
+    const mand = typeSel.value === 'Mandrel';
+    m.querySelector('#tf-mould-wrap').style.display = mand ? '' : 'none';
+    m.querySelector('#tf-fac-wrap').style.display = mand ? 'none' : '';
+  };
+  typeSel.onchange = syncType; syncType();
   m.querySelector('[data-c]').onclick = closeModal;
   m.querySelector('[data-ok]').onclick = async () => {
     const g = s => m.querySelector(s).value.trim();
-    const code = g('#tf-code'), name = g('#tf-name');
+    const code = g('#tf-code'), name = g('#tf-name'), type = g('#tf-type');
     const err = h => m.querySelector('#tf-err').innerHTML = `<div class="alert alert-error">${h}</div>`;
     if (!code || !name) return err('Enter the tool ID and name.');
-    if (!g('#tf-fac')) return err('Select the facility where the tool is located.');
+    let facility = g('#tf-fac'), mouldId = '';
+    if (type === 'Mandrel') {
+      mouldId = g('#tf-mould');
+      const mould = moulds.find(x => x.id === mouldId);
+      if (!mould) return err(moulds.length ? 'Select the mould this mandrel is used with.' : 'This project has no mould yet. Create the mould first, then add its mandrels.');
+      if (!mould.facility) return err('The selected mould has no facility. Set the mould\'s facility first.');
+      facility = mould.facility;
+    } else if (!facility) return err('Select the facility where the tool is located.');
+    if (t.id && isMould(t) && type !== 'Mould' && linked.length) return err(`${linked.length} mandrel${linked.length>1?'s are':' is'} linked to this mould. Move or delete ${linked.length>1?'them':'it'} before changing the type.`);
     if (data.tools.some(x => x.id !== t.id && x.projectId === projectId && (x.code||'').toLowerCase() === code.toLowerCase())) return err('This project already has a tool with that ID.');
     let wp = num(g('#tf-wp')) || 80; wp = Math.min(100, Math.max(10, wp));
     const since = g('#tf-since');
-    const rec = Object.assign({}, t, { id: t.id || uid(), projectId, code, name, facility: g('#tf-fac'), type: g('#tf-type'), description: g('#tf-desc'),
+    const rec = Object.assign({}, t, { id: t.id || uid(), projectId, code, name, facility, type, mouldId, description: g('#tf-desc'),
       maintCycles: num(g('#tf-mc')), maintDays: num(g('#tf-md')), warnPct: wp, lifeCycles: num(g('#tf-life')),
       inServiceAt: since ? new Date(since + 'T00:00:00').toISOString() : '', status: g('#tf-status'),
       createdAt: t.createdAt || nowISO(), updatedAt: nowISO() });
-    if (await Store.put('tools', rec, `Tool ${code}`)) { closeModal(); toast(isNew ? `Tool ${code} added.` : 'Tool updated.'); }
+    // one save: the tool, plus its mandrels follow the mould if the mould moves facility
+    const ok = await Store.mutate(d => {
+      const i = d.tools.findIndex(x => x.id === rec.id);
+      if (i >= 0) d.tools[i] = rec; else d.tools.push(rec);
+      if (rec.type === 'Mould') d.tools.forEach(x => { if (x.mouldId === rec.id) x.facility = rec.facility; });
+    }, `Tool ${code}`);
+    if (ok) { closeModal(); toast(isNew ? `${type === 'Mandrel' ? 'Mandrel' : 'Tool'} ${code} added.` : 'Tool updated.'); }
   };
   const del = m.querySelector('[data-del]');
   if (del) del.onclick = () => {
+    if (linked.length) { m.querySelector('#tf-err').innerHTML = `<div class="alert alert-warning">${linked.length} mandrel${linked.length>1?'s are':' is'} linked to this mould (${linked.map(x => esc(x.code)).join(', ')}). Delete or move ${linked.length>1?'them':'it'} first, or set the mould to Retired.</div>`; return; }
     const n = s ? s.total : 0, mc = s ? s.maintCount : 0;
-    confirmBox('Delete tool', `Delete <strong>${esc(t.code)} — ${esc(t.name)}</strong>${n || mc ? ` and its ${n} production record${n===1?'':'s'} and ${mc} maintenance record${mc===1?'':'s'}` : ''}? This can't be undone.${n ? '<br><br>To keep the history, set the tool to Retired instead.' : ''}`, 'Delete tool', async () => {
+    const what = isMandrel(t) ? `its usage on ${n} part${n===1?'':'s'} (the mould records stay)` : `its ${n} production record${n===1?'':'s'}`;
+    confirmBox('Delete tool', `Delete <strong>${esc(t.code)} — ${esc(t.name)}</strong>${n || mc ? `, ${what} and ${mc} maintenance record${mc===1?'':'s'}` : ''}? This can't be undone.${n ? '<br><br>To keep the history, set the tool to Retired instead.' : ''}`, 'Delete tool', async () => {
       const ok = await Store.mutate(d => {
         d.parts = d.parts.filter(x => x.toolId !== t.id);
+        d.parts.forEach(x => { if (Array.isArray(x.mandrelIds)) x.mandrelIds = x.mandrelIds.filter(id => id !== t.id); });
         d.maint = d.maint.filter(x => x.toolId !== t.id);
         d.tools = d.tools.filter(x => x.id !== t.id);
       }, `Delete tool ${t.code}`);
