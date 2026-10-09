@@ -462,6 +462,29 @@
     background: var(--panel); border:1px solid var(--border); border-radius:10px; padding:1px 6px;
   }
   #opTogglePanel{ padding-bottom: 10px; }
+
+  /* ---------- Run extraction panel ---------- */
+  .extract-box{
+    margin: 14px 28px 0; padding: 16px 18px; background: var(--panel);
+    border:1px solid var(--border); border-radius:10px;
+  }
+  .extract-row{ display:flex; align-items:flex-end; flex-wrap:wrap; gap:14px; margin-bottom:12px; }
+  .extract-row:last-child{ margin-bottom:0; }
+  .extract-field{ display:flex; flex-direction:column; gap:4px; }
+  .extract-field.wide{ flex:1; min-width:260px; }
+  .extract-field label{ font-size:10px; text-transform:uppercase; letter-spacing:.1em; color: var(--text-faint); }
+  .extract-field input, .extract-field select{
+    background: var(--panel-alt); border:1px solid var(--border); color: var(--text);
+    padding:8px 10px; border-radius: var(--radius); font-size:12px; font-family:'IBM Plex Mono', monospace;
+  }
+  .extract-note{ font-size:11px; color: var(--text-faint); font-family:'IBM Plex Mono', monospace; }
+  .extract-note.err{ color: var(--danger); }
+  .extract-note.ok{ color: #4fbf8b; }
+  #extractLog{
+    display:none; margin:12px 0 0; max-height:170px; overflow:auto; background: var(--bg);
+    border:1px solid var(--border-soft); border-radius:6px; padding:10px; font-size:11px; line-height:1.5;
+    color: var(--text-dim); font-family:'IBM Plex Mono', monospace; white-space:pre-wrap;
+  }
 </style>
 
 </head>
@@ -571,6 +594,10 @@
       <input type="file" id="timetrackInput" accept=".xlsx,.xls">
       <span class="tt-status" id="timetrackStatus"></span>
     </div>
+    <div class="timetrack-wrap">
+      <span class="dt-label">Automatic</span>
+      <button type="button" class="btn btn-sm" id="extractToggleBtn">Run extraction…</button>
+    </div>
     <div class="display-toggle-wrap" id="clockMarksWrap" style="display:none;">
       <span class="dt-label">Clock marks</span>
       <label class="switch-row" for="clockMarksToggle">
@@ -601,6 +628,34 @@
 </div>
 
 <div id="viewOccupancy">
+<div id="extractPanel" style="display:none;">
+  <div class="extract-box">
+    <div class="extract-row">
+      <div class="extract-field"><label for="helperUrl">Helper address</label><input id="helperUrl" value="http://127.0.0.1:8765" size="22"></div>
+      <div class="extract-field"><label for="helperToken">Access token</label><input id="helperToken" type="password" placeholder="shown when the helper starts" size="22" autocomplete="off"></div>
+      <button type="button" class="btn btn-sm" id="helperConnectBtn">Connect</button>
+      <span class="extract-note" id="helperStatus">Start segin_helper.py on this computer, then connect.</span>
+    </div>
+    <div class="extract-row">
+      <div class="extract-field"><label for="extractFrom">Extract from day</label><input type="date" id="extractFrom"></div>
+      <div class="extract-field wide"><label for="extractDir">Save files in folder</label><input id="extractDir" placeholder="e.g. C:\SEGIN\exports   (blank = the helper's default folder)"></div>
+      <div class="extract-field"><label for="extractOnly">Sources</label>
+        <select id="extractOnly">
+          <option value="all">SEGIN + TimeTrack</option>
+          <option value="segin">SEGIN only</option>
+          <option value="timetrack">TimeTrack only</option>
+        </select>
+      </div>
+    </div>
+    <div class="extract-row">
+      <button type="button" class="btn" id="extractRunBtn">Run extraction &amp; import</button>
+      <button type="button" class="btn btn-sm" id="extractImportOnlyBtn" title="Skip the extraction and just import the files already sitting in the folder">Import files already in folder</button>
+      <span class="extract-note" id="extractState"></span>
+    </div>
+    <pre id="extractLog"></pre>
+  </div>
+</div>
+
 <div id="errorMsg"></div>
 
 <div id="emptyState">
@@ -1804,7 +1859,17 @@
   const supportsFilePicker = 'showOpenFilePicker' in window;
   let seginFileHandle = null;
   let timetrackFileHandle = null;
+  let helperSession = null; // {names, dirs:{segin?, timetrack?}} for sources imported through the local helper
   let lastAutoRefreshDateKey = null;
+  function hasReloadSource(){
+    return !!(seginFileHandle || timetrackFileHandle || (helperSession && Object.keys(helperSession.dirs).length));
+  }
+  // a file picked by hand supersedes whatever the helper last gave us for that source
+  function forgetHelperSource(src){
+    if (!helperSession) return;
+    delete helperSession.dirs[src];
+    if (!Object.keys(helperSession.dirs).length) helperSession = null;
+  }
 
   const reloadWrap = document.getElementById('reloadWrap');
   const reloadBtn = document.getElementById('reloadBtn');
@@ -1828,6 +1893,7 @@
       ev.preventDefault();
       try{
         const [handle] = await window.showOpenFilePicker({ types: PICKER_TYPES });
+        forgetHelperSource('segin');
         seginFileHandle = handle;
         const file = await handle.getFile();
         const buf = await file.arrayBuffer();
@@ -1840,6 +1906,7 @@
       ev.preventDefault();
       try{
         const [handle] = await window.showOpenFilePicker({ types: PICKER_TYPES });
+        forgetHelperSource('timetrack');
         timetrackFileHandle = handle;
         const file = await handle.getFile();
         const buf = await file.arrayBuffer();
@@ -1853,31 +1920,36 @@
     });
   }
 
+  async function reloadSource(src){
+    // came through the helper? re-read that folder
+    if (helperSession && helperSession.dirs[src]){
+      await importFromHelper([src], helperSession.dirs, () => {});
+      return true;
+    }
+    const handle = src === 'segin' ? seginFileHandle : timetrackFileHandle;
+    if (!handle) return false;
+    if (await handle.queryPermission({mode:'read'}) !== 'granted'){
+      if (await handle.requestPermission({mode:'read'}) !== 'granted') throw new Error('permission denied');
+    }
+    const file = await handle.getFile();
+    const buf = await file.arrayBuffer();
+    if (src === 'segin'){
+      await new Promise(resolve => loadSpreadsheetFile(buf, file.name, (rows) => { processRows(rows, file.name); resolve(); }));
+    } else {
+      const wb = XLSX.read(buf, {type:'array', cellDates:true});
+      const rows = extractTimetrackRows(wb.Sheets[wb.SheetNames[0]]);
+      if (rows) processTimetrackRows(rows, file.name);
+    }
+    return true;
+  }
+
   async function reloadAllData(){
     reloadBtn.classList.add('spinning');
     const previousDay = (daySelect.value && daySelect.value !== 'Load a file first') ? daySelect.value : null;
     let any = false;
     try{
-      if (seginFileHandle){
-        if (await seginFileHandle.queryPermission({mode:'read'}) !== 'granted'){
-          if (await seginFileHandle.requestPermission({mode:'read'}) !== 'granted') throw new Error('permission denied');
-        }
-        const file = await seginFileHandle.getFile();
-        const buf = await file.arrayBuffer();
-        await new Promise(resolve => loadSpreadsheetFile(buf, file.name, (rows) => { processRows(rows, file.name); resolve(); }));
-        any = true;
-      }
-      if (timetrackFileHandle){
-        if (await timetrackFileHandle.queryPermission({mode:'read'}) !== 'granted'){
-          if (await timetrackFileHandle.requestPermission({mode:'read'}) !== 'granted') throw new Error('permission denied');
-        }
-        const file = await timetrackFileHandle.getFile();
-        const buf = await file.arrayBuffer();
-        const wb = XLSX.read(buf, {type:'array', cellDates:true});
-        const sheet = wb.Sheets[wb.SheetNames[0]];
-        const rows = extractTimetrackRows(sheet);
-        if (rows) processTimetrackRows(rows, file.name);
-        any = true;
+      for (const src of ['segin', 'timetrack']){
+        if (await reloadSource(src)) any = true;
       }
       if (any){
         // keep showing the same day as before the reload, if it still exists
@@ -1898,13 +1970,13 @@
   }
 
   reloadBtn.addEventListener('click', () => {
-    if (seginFileHandle || timetrackFileHandle) reloadAllData();
+    if (hasReloadSource()) reloadAllData();
     else reloadStatus.textContent = 'Nothing remembered yet — load files first.';
   });
 
   function checkAutoRefresh(){
     if (!autoRefreshToggle.checked) return;
-    if (!(seginFileHandle || timetrackFileHandle)) return;
+    if (!hasReloadSource()) return;
     const target = autoRefreshTimeInput.value; // "HH:MM"
     if (!target) return;
     const now = new Date();
@@ -1924,7 +1996,7 @@
   setInterval(checkAutoRefresh, 20000);
 
   autoRefreshToggle.addEventListener('change', () => {
-    if (autoRefreshToggle.checked && !(seginFileHandle || timetrackFileHandle)){
+    if (autoRefreshToggle.checked && !hasReloadSource()){
       reloadStatus.textContent = 'Load files first so they can be remembered.';
       autoRefreshToggle.checked = false;
       return;
@@ -1947,6 +2019,218 @@
     // new target can still fire today if it hasn't passed yet
     lastAutoRefreshDateKey = null;
   });
+
+  // ---------- run extraction through the local helper ----------
+  // A web page can't start programs, so segin_helper.py (running on this
+  // computer) runs the export script and hands the finished files back.
+  // Credentials never pass through the page — they stay in the script's own
+  // config file on this machine.
+  const extractPanel = document.getElementById('extractPanel');
+  const extractToggleBtn = document.getElementById('extractToggleBtn');
+  const helperUrlEl = document.getElementById('helperUrl');
+  const helperTokenEl = document.getElementById('helperToken');
+  const helperConnectBtn = document.getElementById('helperConnectBtn');
+  const helperStatusEl = document.getElementById('helperStatus');
+  const extractFromEl = document.getElementById('extractFrom');
+  const extractDirEl = document.getElementById('extractDir');
+  const extractOnlyEl = document.getElementById('extractOnly');
+  const extractRunBtn = document.getElementById('extractRunBtn');
+  const extractImportOnlyBtn = document.getElementById('extractImportOnlyBtn');
+  const extractStateEl = document.getElementById('extractState');
+  const extractLogEl = document.getElementById('extractLog');
+  let helperDefaults = null; // {default_output_dir, files} once connected
+
+  const store = {
+    get(k){ try{ return localStorage.getItem(k); } catch(e){ return null; } },
+    set(k, v){ try{ localStorage.setItem(k, v); } catch(e){} }
+  };
+  const sleep = ms => new Promise(r => setTimeout(r, ms));
+  function setNote(el, text, kind){ el.textContent = text; el.className = 'extract-note' + (kind ? ' ' + kind : ''); }
+
+  helperUrlEl.value = store.get('pft_helperUrl') || helperUrlEl.value;
+  helperTokenEl.value = store.get('pft_helperToken') || '';
+  extractDirEl.value = store.get('pft_extractDir') || '';
+  extractOnlyEl.value = store.get('pft_extractOnly') || 'all';
+  (function(){ // default start day: a week ago
+    const d = new Date(); d.setDate(d.getDate() - 7);
+    const p2 = n => String(n).padStart(2, '0');
+    extractFromEl.value = d.getFullYear() + '-' + p2(d.getMonth() + 1) + '-' + p2(d.getDate());
+  })();
+
+  fileInput.addEventListener('change', () => forgetHelperSource('segin'));
+  timetrackInput.addEventListener('change', () => forgetHelperSource('timetrack'));
+
+  async function helperFetch(path, opts){
+    opts = opts || {};
+    const base = helperUrlEl.value.trim().replace(/\/+$/, '');
+    let res;
+    try{
+      res = await fetch(base + path, Object.assign({}, opts, {
+        headers: Object.assign({'X-Helper-Token': helperTokenEl.value.trim()}, opts.headers || {})
+      }));
+    } catch(e){
+      let msg = "Can't reach the helper at " + base + ". Check that its window is open and still running (on Windows, clicking inside that window can pause it — press Enter), " +
+                "then open " + base + "/ping in a new browser tab: if you see {\"ok\": true} the helper is fine and something is blocking this page from calling it.";
+      if (location.protocol === 'https:') msg += ' This page was opened over https, which browsers can block from calling http://127.0.0.1 — open the HTML file from your disk instead.';
+      throw new Error(msg);
+    }
+    if (!res.ok){
+      let msg = 'HTTP ' + res.status;
+      try{ msg = (await res.json()).error || msg; } catch(e){}
+      throw new Error(msg);
+    }
+    return res;
+  }
+
+  async function connectHelper(){
+    setNote(helperStatusEl, 'Connecting…');
+    try{
+      helperDefaults = await (await helperFetch('/health')).json();
+      store.set('pft_helperUrl', helperUrlEl.value.trim());
+      store.set('pft_helperToken', helperTokenEl.value.trim());
+      extractDirEl.placeholder = helperDefaults.default_output_dir;
+      if (!helperDefaults.helper_version || helperDefaults.helper_version < 10){
+        setNote(helperStatusEl, 'Connected, but this is an OLDER segin_helper.py' + (helperDefaults.helper_version ? ' (v' + helperDefaults.helper_version + ')' : '') + ' — it only picks your export script when it starts. Replace it with the latest file, restart it once, and connect again.', 'err');
+      } else if (helperDefaults.script_found === false || helperDefaults.config_found === false){
+        const issues = [];
+        if (helperDefaults.config_found === false){
+          issues.push("it can't find export_config.json (looked at " + helperDefaults.config_path + ") — copy it next to the helper or next to your export script");
+        }
+        if (helperDefaults.script_found === false){
+          const files = helperDefaults.python_files || [];
+          const nearby = helperDefaults.nearby_python_files || [];
+          issues.push("it can't find its export script (" + helperDefaults.script_name + ") in " + helperDefaults.helper_folder + ". " +
+            (files.length
+              ? 'Files it sees there: ' + files.join(', ') + '. Restart it with: python segin_helper.py --script <your script file name>'
+              : (nearby.length
+                  ? 'No other .py files there, but these are nearby: ' + nearby.join('  |  ') + '. Restart the helper with: python segin_helper.py --script "<full path of your script>" — or copy segin_helper.py into the folder that holds your script.'
+                  : "There are no other .py files there or in the folders next to it — copy segin_helper.py into the folder that holds your export script, or start it with --script and the script's full path.")));
+        }
+        setNote(helperStatusEl, 'Connected, but ' + issues.join('. Also, '), 'err');
+      } else if ((helperDefaults.missing_packages || []).length){
+        const pk = helperDefaults.missing_packages;
+        setNote(helperStatusEl, 'Connected, but the Python that runs your script (' + helperDefaults.python + ') is missing: ' + pk.join(', ') + '. Install them with:  "' + helperDefaults.python + '" -m pip install ' + pk.join(' ') + '  — then click Connect again.', 'err');
+      } else {
+        setNote(helperStatusEl, 'Connected · script: ' + helperDefaults.script_name + ' · default folder: ' + helperDefaults.default_output_dir, 'ok');
+      }
+      return true;
+    } catch(e){
+      helperDefaults = null;
+      setNote(helperStatusEl, e.message, 'err');
+      return false;
+    }
+  }
+
+  // Fetches each requested source's file from the helper (dirs[src] = folder)
+  // and runs it through the same import path as a manually loaded file.
+  async function importFromHelper(which, dirs, log){
+    const names = (helperDefaults && helperDefaults.files) || (helperSession && helperSession.names);
+    if (!names) throw new Error('Connect to the helper first.');
+    const imported = [];
+    for (const src of ['segin', 'timetrack']){
+      if (!which.includes(src)) continue;
+      const name = names[src];
+      log('Importing ' + name + '…');
+      const res = await helperFetch('/file?name=' + encodeURIComponent(name) + '&dir=' + encodeURIComponent(dirs[src] || ''));
+      const buf = await res.arrayBuffer();
+      if (src === 'segin'){
+        await new Promise((resolve, reject) => {
+          try{ loadSpreadsheetFile(buf, name, (rows) => { processRows(rows, name); resolve(); }); }
+          catch(e){ reject(e); }
+        });
+      } else {
+        const wb = XLSX.read(buf, {type:'array', cellDates:true});
+        const rows = extractTimetrackRows(wb.Sheets[wb.SheetNames[0]]);
+        if (!rows) throw new Error("Could not recognize the TimeTrack file's layout.");
+        processTimetrackRows(rows, name);
+      }
+      imported.push(src);
+    }
+    // remember where each source came from, so Reload / auto-refresh can re-read it
+    helperSession = helperSession || { names, dirs: {} };
+    helperSession.names = names;
+    imported.forEach(src => { helperSession.dirs[src] = dirs[src]; });
+    reloadWrap.style.display = 'flex';
+    return imported;
+  }
+
+  async function runExtraction(skipExtraction){
+    extractRunBtn.disabled = true;
+    extractImportOnlyBtn.disabled = true;
+    extractLogEl.style.display = 'block';
+    extractLogEl.textContent = '';
+    const log = (msg) => {
+      extractLogEl.textContent += (extractLogEl.textContent ? '\n' : '') + msg;
+      extractLogEl.scrollTop = extractLogEl.scrollHeight;
+    };
+    try{
+      if (!helperDefaults && !(await connectHelper())){
+        setNote(extractStateEl, 'Not connected to the helper.', 'err');
+        return;
+      }
+      const only = extractOnlyEl.value;
+      const dirInput = extractDirEl.value.trim();
+      store.set('pft_extractDir', dirInput);
+      store.set('pft_extractOnly', only);
+
+      let outDir = dirInput || helperDefaults.default_output_dir;
+      let produced = { segin: only !== 'timetrack', timetrack: only !== 'segin' };
+      let problem = '';
+      let note = '';
+
+      if (!skipExtraction){
+        const from = extractFromEl.value;
+        if (!from) throw new Error('Pick the day to extract from.');
+        setNote(extractStateEl, 'Running extraction — this can take a few minutes…');
+        const res = await helperFetch('/run', {
+          method: 'POST', headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({ from_date: from, output_dir: dirInput, only })
+        });
+        const { job_id } = await res.json();
+        let st;
+        for (;;){
+          await sleep(1000);
+          st = await (await helperFetch('/status?job_id=' + encodeURIComponent(job_id))).json();
+          extractLogEl.textContent = st.log.join('\n');
+          extractLogEl.scrollTop = extractLogEl.scrollHeight;
+          if (st.state !== 'running') break;
+        }
+        outDir = st.output_dir;
+        produced = st.files;
+        if (st.state !== 'done') problem = st.message;
+        note = st.note || '';
+        if (!produced.segin && !produced.timetrack) throw new Error(problem || 'No files were produced.');
+      }
+
+      const which = ['segin', 'timetrack'].filter(s => produced[s]);
+      setNote(extractStateEl, 'Importing…');
+      const dirs = {};
+      which.forEach(s => { dirs[s] = outDir; });
+      const imported = await importFromHelper(which, dirs, log);
+
+      const when = new Date().toLocaleTimeString('en-GB', {hour:'2-digit', minute:'2-digit'});
+      if (problem || note){
+        setNote(extractStateEl, 'Imported ' + imported.join(' + ') + ' at ' + when + (problem ? ', but: ' + problem : '') + (note ? ' — ' + note : ''), 'err');
+      } else {
+        setNote(extractStateEl, 'Imported ' + imported.join(' + ') + ' at ' + when + ' ✓', 'ok');
+        setTimeout(() => { extractPanel.style.display = 'none'; }, 1500);
+      }
+    } catch(e){
+      setNote(extractStateEl, e.message, 'err');
+    } finally {
+      extractRunBtn.disabled = false;
+      extractImportOnlyBtn.disabled = false;
+    }
+  }
+
+  extractToggleBtn.addEventListener('click', () => {
+    const opening = extractPanel.style.display === 'none';
+    extractPanel.style.display = opening ? 'block' : 'none';
+    if (opening && !helperDefaults && helperTokenEl.value.trim()) connectHelper();
+  });
+  helperConnectBtn.addEventListener('click', connectHelper);
+  extractRunBtn.addEventListener('click', () => runExtraction(false));
+  extractImportOnlyBtn.addEventListener('click', () => runExtraction(true));
 
   // ---------- display mode (seamless auto-rotate through operators) ----------
   const gridBox = document.getElementById('gridBox');
