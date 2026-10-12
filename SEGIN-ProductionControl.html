@@ -700,7 +700,7 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
 </div>
 
 <div id="opTogglePanel" style="display:none;">
-  <p class="op-admin-note">Switch operators off to hide them from this display (including Display mode). This doesn't affect the Overview/Projects audit tables.</p>
+  <p class="op-admin-note">Switch operators off to hide them from this display (including Display mode) and from the Admin Overview matrix and its percentages. They still appear in the Admin Projects table.</p>
   <div class="matrix-scroll" id="opToggleScroll">
     <div id="opToggleList" class="op-toggle-list"></div>
   </div>
@@ -734,6 +734,7 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
         <div class="item"><span class="ov-swatch orange"></span> Filed, but doesn't meet criteria</div>
         <div class="item"><span class="ov-swatch red"></span> No information filed</div>
         <div class="item">Top rows: % of workers per day, all workers first, then each company</div>
+        <div class="item">Operators switched off in the Operators list are left out of the rows and the percentages</div>
       </div>
       <div class="matrix-scroll" id="overviewScroll">
         <div class="matrix-grid" id="overviewGrid"></div>
@@ -769,7 +770,7 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
       <p>Load SEGIN data (and optionally TimeTrack data) on the Occupancy tab first — this list is built from the same data.</p>
     </div>
     <div id="operatorsWrap" style="display:none;">
-      <p class="op-admin-note">Operators switched off here are hidden from the Occupancy display (including Display mode), but still appear in Overview and Projects for auditing.</p>
+      <p class="op-admin-note">Operators switched off here are hidden from the Occupancy display (including Display mode) and from the Overview matrix, including its percentages. They still appear in Projects.</p>
       <div class="matrix-scroll" id="operatorsScroll">
         <div id="operatorsList" class="op-toggle-list"></div>
       </div>
@@ -1023,7 +1024,17 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
   function renderOverviewMatrix(){
     const overviewEmpty = document.getElementById('overviewEmpty');
     const overviewWrap = document.getElementById('overviewWrap');
+    if (!overviewEmpty.dataset.def) overviewEmpty.dataset.def = overviewEmpty.innerHTML;
     if (!allTasks.length || !operators.length || !allDays.length){
+      overviewEmpty.innerHTML = overviewEmpty.dataset.def;
+      overviewEmpty.style.display = 'block';
+      overviewWrap.style.display = 'none';
+      return;
+    }
+    // operators switched off in the Operators list are left out — both from the rows and from the percentages
+    const shownOps = operators.filter(o => !disabledOperators.has(normalize(o.name)));
+    if (!shownOps.length){
+      overviewEmpty.innerHTML = '<p>Every operator is switched off in the Operators list — switch some on to see this matrix.</p>';
       overviewEmpty.style.display = 'block';
       overviewWrap.style.display = 'none';
       return;
@@ -1068,7 +1079,7 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
     const allT = tallyFor('ALL', 'All workers');
 
     let lastGroup = null;
-    for (const opInfo of operators){
+    for (const opInfo of shownOps){
       if (opInfo.group !== lastGroup){
         lastGroup = opInfo.group;
         const gh = document.createElement('div');
