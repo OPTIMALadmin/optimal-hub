@@ -1,0 +1,1527 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Roll Tracker — OPTIMAL</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#0f1117;--surface:#181c24;--surface2:#1e2330;--surface3:#252b38;--border:#2a3040;--border2:#3a4255;
+  --text:#e0e6f0;--text2:#8a95a8;--text3:#4a5568;
+  --cyan:#00d4aa;--cyan-dim:rgba(0,212,170,0.12);--cyan-border:rgba(0,212,170,0.3);
+  --green:#39d353;--green-dim:rgba(57,211,83,0.1);--green-border:rgba(57,211,83,0.3);
+  --amber:#f5a623;--amber-dim:rgba(245,166,35,0.1);--amber-border:rgba(245,166,35,0.3);
+  --red:#e05252;--red-dim:rgba(224,82,82,0.1);--red-border:rgba(224,82,82,0.3);
+  --blue:#4a9eff;--blue-dim:rgba(74,158,255,0.1);--blue-border:rgba(74,158,255,0.3);
+  --radius:4px;--radius-lg:6px;
+  --shadow-lg:0 8px 32px rgba(0,0,0,0.5);
+  --font:'JetBrains Mono',monospace;
+}
+body{font-family:var(--font);background:var(--bg);color:var(--text);font-size:13px;min-height:100vh;line-height:1.5}
+.app{display:flex;min-height:100vh;flex-direction:column}
+
+/* Top header bar */
+.topbar{height:70px;background:var(--surface);border-bottom:1px solid var(--border);display:flex;align-items:center;padding:0 24px;gap:20px;position:fixed;top:0;left:0;right:0;z-index:200;flex-shrink:0}
+.topbar-title{font-size:15px;font-weight:700;letter-spacing:0.05em;text-transform:uppercase;color:var(--text)}
+.topbar-title span{color:var(--cyan)}
+.topbar-sep{width:1px;height:24px;background:var(--border);flex-shrink:0}
+.topbar-user{font-size:11px;color:var(--text2);letter-spacing:0.05em}
+.topbar-user strong{color:var(--cyan);font-weight:500}
+.topbar-right{margin-left:auto;display:flex;align-items:center;gap:16px}
+.topbar-logo{display:flex;align-items:center;gap:10px}
+.topbar-builddate{font-size:10px;color:var(--text3);letter-spacing:0.08em}
+
+/* Optimal Group logo SVG inline */
+.optimal-logo{height:32px;width:auto;opacity:0.85}
+
+/* Layout below topbar */
+.app-body{display:flex;margin-top:70px;min-height:calc(100vh - 70px)}
+
+/* Sidebar */
+.sidebar{width:220px;background:var(--surface);border-right:1px solid var(--border);display:flex;flex-direction:column;flex-shrink:0;position:fixed;height:calc(100vh - 70px);top:70px;left:0;z-index:100;overflow-y:auto}
+.sidebar-user{padding:16px 18px;border-bottom:1px solid var(--border)}
+.sidebar-user .name{font-size:12px;font-weight:600;color:var(--text);text-transform:uppercase;letter-spacing:0.06em}
+.sidebar-user .role{font-size:10px;color:var(--cyan);margin-top:3px;letter-spacing:0.06em}
+nav{flex:1;padding:8px 0}
+nav a{display:flex;align-items:center;gap:10px;padding:9px 18px;color:var(--text2);text-decoration:none;font-size:11px;cursor:pointer;transition:all 0.12s;border:none;background:none;width:100%;text-align:left;font-family:var(--font);letter-spacing:0.06em;text-transform:uppercase;border-left:2px solid transparent}
+nav a:hover{background:var(--surface2);color:var(--text);border-left-color:var(--border2)}
+nav a.active{background:var(--cyan-dim);color:var(--cyan);border-left-color:var(--cyan)}
+nav a svg{width:14px;height:14px;flex-shrink:0}
+.nav-section{padding:14px 18px 4px;font-size:9px;text-transform:uppercase;letter-spacing:1px;color:var(--text3);margin-top:4px}
+.sidebar-footer{padding:14px 18px;border-top:1px solid var(--border)}
+.logout-btn{background:transparent;border:1px solid var(--border);color:var(--text2);padding:8px 12px;border-radius:var(--radius);cursor:pointer;font-size:10px;font-family:var(--font);width:100%;text-align:left;transition:all 0.12s;display:flex;align-items:center;gap:8px;letter-spacing:0.06em;text-transform:uppercase}
+.logout-btn:hover{border-color:var(--red-border);color:var(--red);background:var(--red-dim)}
+
+/* Main content */
+.main{margin-left:220px;flex:1;padding:28px 32px;min-height:calc(100vh - 70px);max-width:calc(100vw - 220px)}
+.page-header{margin-bottom:24px;padding-bottom:16px;border-bottom:1px solid var(--border)}
+.page-header h2{font-size:14px;font-weight:700;letter-spacing:0.1em;text-transform:uppercase;color:var(--text)}
+.page-header h2 span{color:var(--cyan)}
+.page-header p{color:var(--text2);margin-top:4px;font-size:11px;letter-spacing:0.04em}
+
+/* Login */
+.login-page{display:flex;align-items:center;justify-content:center;min-height:100vh;background:var(--bg);flex-direction:column;gap:0}
+.login-topbar{width:100%;background:var(--surface);border-bottom:1px solid var(--border);padding:14px 32px;display:flex;align-items:center;justify-content:space-between;position:fixed;top:0;left:0}
+.login-topbar-left{font-size:14px;font-weight:700;letter-spacing:0.1em;text-transform:uppercase;color:var(--text)}
+.login-topbar-left span{color:var(--cyan)}
+.login-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);padding:36px;width:380px;margin-top:56px}
+.login-logo-wrap{text-align:center;margin-bottom:28px;padding-bottom:20px;border-bottom:1px solid var(--border)}
+.login-logo-wrap h1{font-size:12px;font-weight:600;color:var(--text2);margin-top:14px;letter-spacing:0.12em;text-transform:uppercase}
+
+/* Forms */
+.form-group{margin-bottom:16px}
+label{display:block;font-size:10px;font-weight:600;color:var(--text2);margin-bottom:6px;text-transform:uppercase;letter-spacing:0.08em}
+input[type=text],input[type=password],input[type=email],input[type=number],select,textarea{width:100%;padding:9px 12px;border:1px solid var(--border);border-radius:var(--radius);font-family:var(--font);font-size:12px;background:var(--surface2);color:var(--text);transition:border-color 0.12s;outline:none}
+input:focus,select:focus,textarea:focus{border-color:var(--cyan);box-shadow:0 0 0 2px var(--cyan-dim)}
+select option{background:var(--surface2)}
+textarea{resize:vertical;min-height:80px;line-height:1.5}
+input[type=checkbox]{width:auto;margin-right:4px;accent-color:var(--cyan)}
+
+/* Buttons */
+.btn{display:inline-flex;align-items:center;gap:6px;padding:8px 16px;border-radius:var(--radius);border:1px solid var(--border);font-family:var(--font);font-size:11px;font-weight:600;cursor:pointer;transition:all 0.12s;text-decoration:none;text-transform:uppercase;letter-spacing:0.06em}
+.btn svg{width:13px;height:13px;flex-shrink:0}
+.btn-primary{background:var(--cyan);color:#0f1117;border-color:var(--cyan)}.btn-primary:hover{background:#00bfa0}
+.btn-success{background:var(--green-dim);color:var(--green);border-color:var(--green-border)}.btn-success:hover{background:var(--green);color:#0f1117}
+.btn-danger{background:var(--red-dim);color:var(--red);border-color:var(--red-border)}.btn-danger:hover{background:var(--red);color:#fff}
+.btn-outline{background:transparent;border-color:var(--border);color:var(--text2)}.btn-outline:hover{border-color:var(--border2);color:var(--text);background:var(--surface2)}
+.btn-blue{background:var(--blue-dim);color:var(--blue);border-color:var(--blue-border)}.btn-blue:hover{background:var(--blue);color:#fff}
+.btn-sm{padding:5px 10px;font-size:10px}
+.btn:disabled{opacity:0.3;cursor:not-allowed}
+.btn-group{display:flex;gap:8px;flex-wrap:wrap}
+
+/* Cards */
+.card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);padding:20px}
+
+/* Stats */
+.stats-row{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:24px}
+.stat-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:16px}
+.stat-card .label{font-size:9px;color:var(--text3);text-transform:uppercase;letter-spacing:0.1em;margin-bottom:8px;font-weight:600}
+.stat-card .value{font-size:28px;font-weight:700;letter-spacing:-0.02em;color:var(--text)}
+
+/* Tables */
+.table-wrap{overflow-x:auto}
+table{width:100%;border-collapse:collapse;font-size:11px}
+th{text-align:left;padding:9px 12px;border-bottom:1px solid var(--border);font-size:9px;text-transform:uppercase;letter-spacing:0.1em;color:var(--text3);font-weight:600;white-space:nowrap;background:var(--surface2)}
+td{padding:10px 12px;border-bottom:1px solid var(--border);vertical-align:middle;color:var(--text)}
+tr:last-child td{border-bottom:none}
+tbody tr:hover td{background:var(--surface2)}
+
+/* Badges */
+.badge{display:inline-flex;align-items:center;padding:2px 8px;border-radius:2px;font-size:10px;font-weight:600;white-space:nowrap;text-transform:uppercase;letter-spacing:0.06em;border:1px solid}
+.badge-blue{background:var(--blue-dim);color:var(--blue);border-color:var(--blue-border)}
+.badge-green{background:var(--green-dim);color:var(--green);border-color:var(--green-border)}
+.badge-amber{background:var(--amber-dim);color:var(--amber);border-color:var(--amber-border)}
+.badge-red{background:var(--red-dim);color:var(--red);border-color:var(--red-border)}
+.badge-gray{background:var(--surface3);color:var(--text2);border-color:var(--border)}
+.badge-cyan{background:var(--cyan-dim);color:var(--cyan);border-color:var(--cyan-border)}
+
+/* PO Detail */
+.po-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.po-field{background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius);padding:10px 12px}
+.po-field .key{font-size:9px;color:var(--text3);margin-bottom:4px;font-weight:600;text-transform:uppercase;letter-spacing:0.1em}
+.po-field .val{font-size:13px;font-weight:500;word-break:break-word;color:var(--text)}
+.section-title{font-size:9px;text-transform:uppercase;letter-spacing:0.12em;color:var(--cyan);margin-bottom:12px;font-weight:700;display:flex;align-items:center;gap:8px}
+.section-title::after{content:'';flex:1;height:1px;background:var(--border)}
+
+/* Approval level cards */
+.level-cards{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin:12px 0}
+.level-card{border:1px solid var(--border);border-radius:var(--radius);padding:14px;opacity:0.3;transition:all 0.2s;background:var(--surface2)}
+.level-card.active{opacity:1;border-color:var(--cyan-border);background:var(--cyan-dim);box-shadow:0 0 12px var(--cyan-dim)}
+.level-card.approved{opacity:1;border-color:var(--green-border);background:var(--green-dim)}
+.level-card.rejected{opacity:1;border-color:var(--red-border);background:var(--red-dim)}
+.level-card h4{font-size:11px;font-weight:700;margin-bottom:3px;text-transform:uppercase;letter-spacing:0.06em}
+.level-card p{font-size:10px;color:var(--text2)}
+.level-card .status-label{margin-top:8px;font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:0.1em;color:var(--cyan)}
+
+/* Alerts */
+.alert{padding:11px 14px;border-radius:var(--radius);font-size:11px;margin-bottom:16px;line-height:1.6;border:1px solid}
+.alert-success{background:var(--green-dim);color:var(--green);border-color:var(--green-border)}
+.alert-error{background:var(--red-dim);color:var(--red);border-color:var(--red-border)}
+.alert-info{background:var(--blue-dim);color:var(--blue);border-color:var(--blue-border)}
+.alert-warning{background:var(--amber-dim);color:var(--amber);border-color:var(--amber-border)}
+
+/* Approval stamp */
+.approval-stamp{position:relative;overflow:hidden;border:1px solid var(--green-border);background:var(--green-dim);border-radius:var(--radius);padding:18px;margin-bottom:16px}
+.approval-stamp .stamp-text{position:absolute;right:-10px;top:50%;transform:translateY(-50%) rotate(-12deg);font-size:48px;font-weight:900;color:rgba(57,211,83,0.08);white-space:nowrap;pointer-events:none;letter-spacing:6px;text-transform:uppercase}
+
+/* Timeline */
+.timeline{padding:0}
+.timeline-item{display:flex;gap:12px;padding:12px 0;border-bottom:1px solid var(--border)}
+.timeline-item:last-child{border-bottom:none}
+.timeline-dot{width:28px;height:28px;border-radius:2px;display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:13px;border:1px solid var(--border);background:var(--surface2)}
+.timeline-body .who{font-size:11px;font-weight:600;color:var(--text);text-transform:uppercase;letter-spacing:0.04em}
+.timeline-body .when{font-size:10px;color:var(--text3);margin-top:2px;font-family:var(--font)}
+.timeline-body .what{font-size:11px;color:var(--text2);margin-top:4px;line-height:1.5}
+
+/* Modal */
+.modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,0.7);display:flex;align-items:center;justify-content:center;z-index:999;padding:20px}
+.modal{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);padding:28px;width:480px;max-width:100%;box-shadow:var(--shadow-lg)}
+.modal h3{font-size:13px;font-weight:700;margin-bottom:8px;text-transform:uppercase;letter-spacing:0.08em;color:var(--cyan)}
+.modal .modal-desc{color:var(--text2);font-size:11px;margin-bottom:16px;line-height:1.7}
+.modal-actions{display:flex;gap:8px;justify-content:flex-end;margin-top:18px}
+
+/* Upload page */
+.upload-options{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.upload-option{border:1px solid var(--border);border-radius:var(--radius-lg);padding:24px;cursor:pointer;transition:all 0.15s;background:var(--surface)}
+.upload-option:hover{border-color:var(--cyan-border);background:var(--cyan-dim)}
+.upload-option .opt-icon{font-size:32px;margin-bottom:12px}
+.upload-option h3{font-size:12px;font-weight:700;margin-bottom:8px;text-transform:uppercase;letter-spacing:0.08em;color:var(--cyan)}
+.upload-option p{font-size:11px;color:var(--text2);line-height:1.7;margin-bottom:14px}
+.upload-option .steps{border-top:1px solid var(--border);padding-top:12px;display:flex;flex-direction:column;gap:7px}
+.upload-option .step{display:flex;align-items:flex-start;gap:8px}
+.step-num{width:16px;height:16px;border-radius:2px;background:var(--cyan);color:#0f1117;font-size:9px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0;margin-top:1px}
+.step-text{font-size:11px;color:var(--text2);line-height:1.5}
+
+/* PDF import banner */
+.pdf-ready-banner{background:var(--green-dim);border:1px solid var(--green-border);border-radius:var(--radius-lg);padding:16px 20px;display:flex;align-items:center;gap:14px;margin-bottom:18px}
+.pdf-ready-banner .pdf-icon{font-size:28px;flex-shrink:0}
+.pdf-ready-banner h3{font-size:12px;font-weight:700;color:var(--green);margin-bottom:2px;text-transform:uppercase;letter-spacing:0.06em}
+.pdf-ready-banner p{font-size:11px;color:var(--text2)}
+
+/* Review form */
+.review-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:18px}
+.level-indicator{border-radius:var(--radius);padding:11px 14px;display:flex;align-items:center;gap:10px;margin-bottom:18px;background:var(--surface2);border:1px solid var(--border)}
+
+/* Items editor */
+.items-header-row{display:grid;grid-template-columns:1fr 70px 100px 100px 32px;gap:8px;margin-bottom:5px;padding:0 2px}
+.items-header-row span{font-size:9px;color:var(--text3);text-transform:uppercase;letter-spacing:0.1em;font-weight:600}
+.item-row{display:grid;grid-template-columns:1fr 70px 100px 100px 32px;gap:8px;align-items:center;margin-bottom:7px}
+.item-row input{padding:7px 9px;font-size:11px}
+.del-btn{background:var(--red-dim);border:1px solid var(--red-border);color:var(--red);border-radius:var(--radius);cursor:pointer;font-size:16px;display:flex;align-items:center;justify-content:center;height:32px;width:32px;flex-shrink:0;font-weight:400;line-height:1;padding:0}
+.del-btn:hover{background:var(--red);color:#fff}
+
+/* User management */
+.user-row{display:flex;align-items:center;gap:12px;padding:14px 0;border-bottom:1px solid var(--border);flex-wrap:wrap}
+.user-row:last-child{border-bottom:none}
+.user-avatar{width:34px;height:34px;border-radius:var(--radius);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;flex-shrink:0;border:1px solid var(--border)}
+.user-info{flex:1;min-width:160px}
+.user-info .uname{font-size:12px;font-weight:600;color:var(--text);text-transform:uppercase;letter-spacing:0.04em}
+.user-info .uemail{font-size:10px;color:var(--text3);margin-top:2px}
+
+/* Parameters */
+.param-card{border-radius:var(--radius);padding:18px;border:1px solid}
+.param-card h3{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.1em;margin-bottom:6px}
+.param-card .amount{font-size:20px;font-weight:700;margin-bottom:4px;color:var(--text)}
+.param-card .desc{font-size:10px;color:var(--text2);margin-bottom:12px;letter-spacing:0.04em}
+.approver-chip{font-size:10px;background:var(--surface3);padding:2px 8px;border-radius:2px;display:inline-block;margin:2px;color:var(--text2);border:1px solid var(--border);font-family:var(--font)}
+
+/* Toast */
+#toast{position:fixed;top:70px;right:20px;z-index:9999;pointer-events:none}
+.toast-item{background:var(--surface);border:1px solid var(--border);color:var(--text);padding:10px 16px;border-radius:var(--radius);font-size:11px;margin-bottom:7px;box-shadow:var(--shadow-lg);animation:slideIn 0.15s ease;max-width:300px;line-height:1.5;font-family:var(--font);letter-spacing:0.03em}
+.toast-item.success{border-color:var(--green-border);color:var(--green);background:var(--green-dim)}
+.toast-item.error{border-color:var(--red-border);color:var(--red);background:var(--red-dim)}
+@keyframes slideIn{from{transform:translateX(110%);opacity:0}to{transform:translateX(0);opacity:1}}
+@keyframes slideOut{from{opacity:1}to{opacity:0;transform:translateX(110%)}}
+
+/* Scrollbar */
+::-webkit-scrollbar{width:4px;height:4px}
+::-webkit-scrollbar-track{background:var(--bg)}
+::-webkit-scrollbar-thumb{background:var(--border2);border-radius:2px}
+
+@media(max-width:900px){
+  .sidebar{width:190px}.main{margin-left:190px;padding:20px}
+  .stats-row{grid-template-columns:repeat(2,1fr)}
+  .po-grid,.review-grid{grid-template-columns:1fr}
+  .upload-options,.level-cards{grid-template-columns:1fr}
+}
+
+
+/* ===== Roll Tracker additions ===== */
+:root{color-scheme:dark;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+html{scroll-padding-top:env(safe-area-inset-top,0px);background:var(--bg)}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){color-scheme:dark}}
+:root[data-theme="dark"]{color-scheme:dark}
+body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset-top,0px);z-index:300;background:var(--surface)}
+.topbar{top:env(safe-area-inset-top,0px)}
+.sidebar{top:calc(70px + env(safe-area-inset-top,0px))}
+img{max-width:100%}
+.btn:focus-visible,nav a:focus-visible,.logout-btn:focus-visible{outline:2px solid var(--cyan);outline-offset:2px}
+input[type=date],input[type=datetime-local]{width:100%;padding:9px 12px;border:1px solid var(--border);border-radius:var(--radius);font-family:var(--font);font-size:12px;background:var(--surface2);color:var(--text);outline:none;color-scheme:dark}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+.grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
+.grid4{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}
+.serial{font-weight:700;color:var(--cyan);letter-spacing:0.04em;white-space:nowrap}
+.muted{color:var(--text2)}.dim{color:var(--text3)}
+.clickrow{cursor:pointer}
+.bar{height:6px;background:var(--surface3);border-radius:2px;overflow:hidden;min-width:70px}
+.bar>i{display:block;height:100%;background:var(--cyan)}
+.bar.amber>i{background:var(--amber)}.bar.red>i{background:var(--red)}.bar.green>i{background:var(--green)}
+.roll-hero{display:flex;gap:18px;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;margin-bottom:18px}
+.roll-hero .big-serial{font-size:24px;font-weight:700;color:var(--cyan);letter-spacing:0.04em}
+.roll-hero .sub{font-size:11px;color:var(--text2);margin-top:4px}
+.gauge{background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius);padding:12px 14px}
+.gauge .k{font-size:9px;color:var(--text3);text-transform:uppercase;letter-spacing:0.1em;font-weight:600;margin-bottom:6px}
+.gauge .v{font-size:18px;font-weight:700;color:var(--text);margin-bottom:8px}
+.gauge .v small{font-size:11px;color:var(--text2);font-weight:500}
+.usage-card{background:var(--surface2);border:1px solid var(--border);border-left:3px solid var(--border2);border-radius:var(--radius);padding:14px 16px;margin-bottom:10px}
+.usage-card.open{border-left-color:var(--amber);background:linear-gradient(90deg,var(--amber-dim),var(--surface2) 40%)}
+.usage-card .uc-head{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:10px}
+.usage-card .uc-num{font-size:11px;font-weight:700;color:var(--text);letter-spacing:0.06em}
+.usage-card .uc-grid{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:10px}
+.usage-card .uc-grid .k{font-size:9px;color:var(--text3);text-transform:uppercase;letter-spacing:0.1em;font-weight:600;margin-bottom:3px}
+.usage-card .uc-grid .v{font-size:12px;color:var(--text);word-break:break-word}
+.usage-card .uc-foot{margin-top:10px;font-size:10px;color:var(--text3);display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;align-items:center}
+.chip{display:inline-flex;align-items:center;gap:4px;font-size:10px;background:var(--surface3);padding:2px 8px;border-radius:2px;margin:2px 4px 2px 0;color:var(--text);border:1px solid var(--border)}
+.chip b{color:var(--cyan)}
+.note{padding:10px 0;border-bottom:1px solid var(--border)}
+.note:last-child{border-bottom:none}
+.note .meta{font-size:10px;color:var(--text3);margin-bottom:4px;display:flex;justify-content:space-between;gap:8px}
+.note .meta strong{color:var(--cyan);font-weight:600}
+.note .txt{font-size:12px;color:var(--text);white-space:pre-wrap;word-break:break-word}
+.part-pick{border:1px solid var(--border);border-radius:var(--radius);background:var(--surface2);max-height:240px;overflow:auto}
+.part-row{display:flex;align-items:center;gap:10px;padding:7px 10px;border-bottom:1px solid var(--border)}
+.part-row:last-child{border-bottom:none}
+.part-row.on{background:var(--cyan-dim)}
+.part-row .pn{flex:1;font-size:11px;min-width:0}
+.part-row .pn small{color:var(--text3);display:block;font-size:10px}
+.qty{display:flex;align-items:center;gap:0}
+.qty button{width:26px;height:26px;border:1px solid var(--border);background:var(--surface3);color:var(--text);font-family:var(--font);cursor:pointer;font-size:13px;line-height:1}
+.qty button:hover{border-color:var(--cyan-border);color:var(--cyan)}
+.qty input{width:46px!important;height:26px;padding:2px 4px!important;text-align:center;border-radius:0!important}
+.proj-card{margin-bottom:14px}
+.proj-head{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:12px}
+.proj-head .pcode{font-weight:700;color:var(--cyan);font-size:13px;letter-spacing:0.04em}
+.proj-head .pname{font-size:13px;font-weight:600;color:var(--text)}
+.inline-form{display:grid;grid-template-columns:1fr 2fr auto;gap:8px;align-items:end;margin-top:12px}
+.modal.wide{width:720px}
+.modal{max-height:calc(100vh - 40px);overflow:auto}
+.status-dot{display:inline-block;width:7px;height:7px;border-radius:50%;margin-right:6px;vertical-align:middle}
+.toolbar{display:flex;gap:10px;flex-wrap:wrap;align-items:end;margin-bottom:16px}
+.toolbar .form-group{margin:0;min-width:150px}
+.empty{padding:30px;text-align:center;color:var(--text3);font-size:11px;letter-spacing:0.04em}
+.conn-chip{font-size:10px;padding:4px 10px;border:1px solid var(--border);border-radius:var(--radius);color:var(--text2);letter-spacing:0.06em;text-transform:uppercase;white-space:nowrap}
+.conn-chip.ok{color:var(--green);border-color:var(--green-border);background:var(--green-dim)}
+.conn-chip.local{color:var(--amber);border-color:var(--amber-border);background:var(--amber-dim)}
+.alert-list .al{display:flex;gap:10px;align-items:center;padding:9px 0;border-bottom:1px solid var(--border);font-size:11px;cursor:pointer}
+.alert-list .al:last-child{border-bottom:none}
+.req::after{content:" *";color:var(--red)}
+@media(max-width:1100px){.usage-card .uc-grid{grid-template-columns:repeat(3,minmax(0,1fr))}.grid4{grid-template-columns:repeat(2,1fr)}}
+@media(max-width:760px){
+  .topbar{height:auto;min-height:56px;padding:8px 14px;flex-wrap:wrap;gap:10px}
+  .topbar-sep,.topbar-user{display:none}
+  .topbar-right img{height:40px!important}
+  .app-body{margin-top:calc(56px + env(safe-area-inset-top,0px));flex-direction:column}
+  .sidebar{position:static;width:100%;height:auto;border-right:none;border-bottom:1px solid var(--border)}
+  .sidebar-user{display:none}
+  nav{display:flex;overflow-x:auto;padding:0}
+  nav a{width:auto;white-space:nowrap;border-left:none;border-bottom:2px solid transparent}
+  nav a.active{border-bottom-color:var(--cyan)}
+  .nav-section{display:none}
+  .sidebar-footer{padding:8px 14px}
+  .main{margin-left:0;max-width:100vw;padding:18px 14px}
+  .grid2,.grid3,.stats-row,.grid4{grid-template-columns:1fr}
+  .usage-card .uc-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .inline-form{grid-template-columns:1fr}
+  .login-card{width:calc(100vw - 28px)}
+}
+@media (prefers-reduced-motion: reduce){*{animation:none!important;transition:none!important}}
+.logout-btn svg{width:14px;height:14px;flex-shrink:0}
+
+</style>
+</head>
+<body>
+<div id="toast"></div>
+<div id="root"></div>
+<script>
+// ============================================================
+// PRE-PREG ROLL TRACKER — OPTIMAL  (GitHub storage edition)
+// ============================================================
+const INITIAL_USERS = [
+  { id:'admin', login:'admin', pass:'adminOPTIMAL', name:'Administrator', role:'admin' },
+  { id:'user1', login:'user1', pass:'user1OPTIMAL', name:'User 1',        role:'user'  },
+];
+// GitHub storage — owner/repo/branch embedded, only the access token is stored per browser
+const GH_OWNER  = 'optimaladmin';
+const GH_REPO   = 'Roll-Data';
+const GH_BRANCH = 'main';
+const GH_FILE   = 'roll_data.json';
+const TOKEN_KEY = 'rolltracker_gh_token';
+const CACHE_KEY = 'rolltracker_cache';
+const SESSION_KEY = 'rolltracker_session';
+const SERIAL_PREFIX = 'OPT-PP-';
+const FORM_PAGES = ['rollform','password','storage'];
+const POLL_MS = 60000;
+
+const state = {
+  mode: 'github',
+  store: null,            // full JSON document as stored in GitHub
+  sha: null,              // GitHub blob sha of the version we hold
+  syncing: false, lastSync: null, ghError: null, offline: false,
+  loaded: { users:false, rolls:false, projects:false },
+  data: { users:{}, rolls:{}, projects:{} },
+  loggedIn:false, currentUser:null,
+  page:'dashboard', rollId:null, editRollId:null,
+  filters:{ q:'', status:'active' },
+  an:{ project:'', material:'', from:'', to:'' },
+  pendingRender:false,
+};
+// ============================================================
+// HELPERS
+// ============================================================
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2,7);
+const clone = o => JSON.parse(JSON.stringify(o));
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+const nowISO = () => new Date().toISOString();
+const num = (n,d=2) => Number(n||0).toLocaleString('pt-PT',{minimumFractionDigits:d,maximumFractionDigits:d});
+const fmtDate = iso => iso ? new Date(iso).toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'numeric'}) : '—';
+const fmtDT = iso => iso ? new Date(iso).toLocaleString('en-GB',{day:'2-digit',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'}) : '—';
+function fmtDur(ms){ const h = ms/3.6e6; if (h < 48) return num(h,1)+' h'; return num(h/24,1)+' d'; }
+function toLocalInput(iso){ if(!iso) return ''; const d=new Date(iso); const p=n=>String(n).padStart(2,'0'); return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`; }
+function toDateInput(iso){ return iso ? toLocalInput(iso).slice(0,10) : ''; }
+function fromLocalInput(v){ if(!v) return null; const d=new Date(v); return isNaN(d) ? null : d.toISOString(); }
+function serialStr(n){ return SERIAL_PREFIX + String(n).padStart(5,'0'); }
+const isAdmin = () => state.currentUser?.role === 'admin';
+const users = () => Object.values(state.data.users).sort((a,b)=>(a.role===b.role? a.login.localeCompare(b.login) : a.role==='admin'?-1:1));
+const rolls = () => Object.values(state.data.rolls).sort((a,b)=>(b.serial||0)-(a.serial||0));
+const projects = () => Object.values(state.data.projects).sort((a,b)=>String(a.code||a.name).localeCompare(String(b.code||b.name)));
+const userName = login => state.data.users[Object.keys(state.data.users).find(k=>state.data.users[k].login===login)]?.name || login;
+
+function toast(msg, type='success', duration=3500) {
+  const t = document.createElement('div');
+  t.className = 'toast-item '+type; t.textContent = msg;
+  document.getElementById('toast').appendChild(t);
+  setTimeout(()=>{ t.style.animation='slideOut 0.2s ease forwards'; setTimeout(()=>t.remove(), 200); }, duration);
+}
+
+// ============================================================
+// ROLL COMPUTATIONS
+// ============================================================
+function addMonths(iso, m){ const d=new Date(iso); d.setMonth(d.getMonth()+Number(m||0)); return d; }
+function rollStats(r){
+  const usages = r.usages || [];
+  const used = usages.reduce((s,u)=>s+Number(u.meters||0),0);
+  const initial = Number(r.initialLength||0);
+  const remaining = Math.max(0, initial - used);
+  const now = Date.now();
+  let outMs = 0, open = null;
+  usages.forEach(u=>{
+    const a = new Date(u.outAt).getTime();
+    const b = u.inAt ? new Date(u.inAt).getTime() : now;
+    if (!u.inAt) open = u;
+    if (!isNaN(a)) outMs += Math.max(0, b - a);
+  });
+  const outLifeMs = Number(r.lifeOutDays||0) * 864e5;
+  const outPct = outLifeMs ? outMs/outLifeMs*100 : 0;
+  const outLeftMs = outLifeMs ? outLifeMs - outMs : null;
+  const coldExpiry = (r.arrival && r.lifeColdMonths) ? addMonths(r.arrival, r.lifeColdMonths) : null;
+  const coldDaysLeft = coldExpiry ? Math.floor((coldExpiry.getTime()-now)/864e5) : null;
+  const widthM = Number(r.width||0)/1000;
+  let status = 'stored';
+  if (r.archived) status = 'archived';
+  else if (initial > 0 && remaining <= 0.0001) status = 'depleted';
+  else if (open) status = 'out';
+  const expired = (outLifeMs && outPct >= 100) || (coldDaysLeft !== null && coldDaysLeft < 0);
+  const warn = !expired && ((outLifeMs && outPct >= 80) || (coldDaysLeft !== null && coldDaysLeft <= 30));
+  return { used, initial, remaining, remPct: initial? remaining/initial*100 : 0, area: remaining*widthM,
+           outMs, outPct, outLeftMs, open, coldExpiry, coldDaysLeft, status, expired, warn };
+}
+function statusBadge(st, s){
+  const map = { stored:['badge-cyan','In cold storage'], out:['badge-amber','Out of storage'], depleted:['badge-gray','Depleted'], archived:['badge-gray','Archived'] };
+  const [c,l] = map[st.status];
+  let extra = '';
+  if (st.status!=='archived' && st.status!=='depleted') {
+    if (st.expired) extra = ' <span class="badge badge-red">Expired</span>';
+    else if (st.warn) extra = ' <span class="badge badge-amber">Life warning</span>';
+  }
+  return `<span class="badge ${c}">${l}</span>${extra}`;
+}
+function barClass(pct, inverse){ // inverse: high pct = bad
+  if (inverse) return pct>=100?'red':pct>=80?'amber':'green';
+  return pct<=10?'red':pct<=25?'amber':'';
+}
+function partsText(parts){ return (parts||[]).filter(p=>p.qty>0).map(p=>`${p.qty}× ${p.name}`).join(', '); }
+function partsChips(parts){
+  const ps = (parts||[]).filter(p=>p.qty>0);
+  if (!ps.length) return '<span class="dim">—</span>';
+  return ps.map(p=>`<span class="chip"><b>${p.qty}×</b> ${esc(p.name)}${p.pn?` <span class="dim">${esc(p.pn)}</span>`:''}</span>`).join('');
+}
+
+// ============================================================
+// STORAGE LAYER — GitHub repository (single JSON file)
+// ============================================================
+const getToken = () => { try { return localStorage.getItem(TOKEN_KEY) || ''; } catch(e) { return ''; } };
+const setToken = t => { try { t ? localStorage.setItem(TOKEN_KEY, t) : localStorage.removeItem(TOKEN_KEY); } catch(e) {} };
+const ghConfigured = () => !!getToken();
+const ghHeaders = (accept='application/vnd.github+json') => ({ 'Authorization':'Bearer '+getToken(), 'Accept':accept, 'X-GitHub-Api-Version':'2022-11-28' });
+const ghUrl = () => `https://api.github.com/repos/${GH_OWNER}/${GH_REPO}/contents/${GH_FILE}`;
+
+function emptyStore(){ return { schema:1, users:{}, rolls:{}, projects:{}, meta:{ nextSerial:1 } }; }
+function normalizeStore(d){
+  const s = Object.assign(emptyStore(), d||{});
+  ['users','rolls','projects'].forEach(k=>{ s[k] = s[k] || {}; Object.keys(s[k]).forEach(id=>{ s[k][id].id = id; }); });
+  s.meta = Object.assign({ nextSerial:1 }, s.meta||{});
+  return s;
+}
+function applyStore(d, sha){
+  state.store = normalizeStore(d);
+  if (sha !== undefined) state.sha = sha;
+  state.data = { users:state.store.users, rolls:state.store.rolls, projects:state.store.projects };
+  state.loaded = { users:true, rolls:true, projects:true };
+  try { localStorage.setItem(CACHE_KEY, JSON.stringify({ store:state.store, sha:state.sha, at:nowISO() })); } catch(e) {}
+}
+function loadCache(){
+  try { const c = JSON.parse(localStorage.getItem(CACHE_KEY)||'null'); if (c && c.store) { applyStore(c.store, c.sha); state.lastSync = c.at; return true; } } catch(e) {}
+  return false;
+}
+function b64EncodeUtf8(str){
+  const bytes = new TextEncoder().encode(str); let bin = '';
+  for (let i=0; i<bytes.length; i+=0x8000) bin += String.fromCharCode.apply(null, bytes.subarray(i, i+0x8000));
+  return btoa(bin);
+}
+function b64DecodeUtf8(b64){ const bin = atob(b64.replace(/\s/g,'')); const bytes = new Uint8Array(bin.length); for (let i=0;i<bin.length;i++) bytes[i]=bin.charCodeAt(i); return new TextDecoder('utf-8').decode(bytes); }
+function ghErrorText(status, body){
+  if (status===401) return 'GitHub rejected the access token (401). It may be wrong or expired — enter a new token.';
+  if (status===403) return 'Access forbidden (403). The token needs "Contents: Read and write" on '+GH_OWNER+'/'+GH_REPO+'.';
+  if (status===404) return 'Repository '+GH_OWNER+'/'+GH_REPO+' not found, or the token has no access to it.';
+  return 'GitHub error '+status+(body?': '+String(body).slice(0,160):'');
+}
+// → {ok, data, sha} | {ok:true, notFound:true} | {ok:false, status, error, network}
+async function ghGet(){
+  if (!ghConfigured()) return { ok:false, error:'No GitHub access token on this computer.' };
+  try {
+    const r = await fetch(ghUrl()+`?ref=${GH_BRANCH}&t=${Date.now()}`, { headers:ghHeaders(), cache:'no-store' });
+    if (r.status === 404) {
+      // distinguish "file not created yet" from "repo not reachable"
+      const rr = await fetch(`https://api.github.com/repos/${GH_OWNER}/${GH_REPO}`, { headers:ghHeaders(), cache:'no-store' });
+      if (rr.ok) return { ok:true, notFound:true };
+      return { ok:false, status:rr.status, error:ghErrorText(rr.status) };
+    }
+    if (!r.ok) return { ok:false, status:r.status, error:ghErrorText(r.status, await r.text()) };
+    const meta = await r.json();
+    let text;
+    if (meta.content && meta.encoding === 'base64') text = b64DecodeUtf8(meta.content);
+    else { // files over 1 MB: fetch raw
+      const raw = await fetch(ghUrl()+`?ref=${GH_BRANCH}&t=${Date.now()}`, { headers:ghHeaders('application/vnd.github.raw+json'), cache:'no-store' });
+      if (!raw.ok) return { ok:false, status:raw.status, error:ghErrorText(raw.status) };
+      text = await raw.text();
+    }
+    return { ok:true, data: JSON.parse(text), sha: meta.sha };
+  } catch(e) { return { ok:false, network:true, error:'Could not reach GitHub ('+e.message+').' }; }
+}
+// → {ok, sha} | {ok:false, conflict:true} | {ok:false, error}
+async function ghPut(data, sha, message){
+  try {
+    const body = { message: message || 'Roll Tracker update', content: b64EncodeUtf8(JSON.stringify(data, null, 1)), branch: GH_BRANCH };
+    if (sha) body.sha = sha;
+    const r = await fetch(ghUrl(), { method:'PUT', headers:{ ...ghHeaders(), 'Content-Type':'application/json' }, body: JSON.stringify(body) });
+    if (r.ok) { const j = await r.json(); return { ok:true, sha:j.content.sha }; }
+    const txt = await r.text();
+    if (r.status === 409 || (r.status === 422 && /sha/i.test(txt))) return { ok:false, conflict:true };
+    if (r.status === 422 && /branch/i.test(txt)) return { ok:false, error:'Branch "'+GH_BRANCH+'" does not exist in '+GH_REPO+'. Add a README in GitHub so the main branch is created.' };
+    return { ok:false, status:r.status, error:ghErrorText(r.status, txt) };
+  } catch(e) { return { ok:false, network:true, error:'Could not reach GitHub ('+e.message+'). Nothing was saved.' }; }
+}
+function setSyncing(on, label){
+  state.syncing = on;
+  const b = document.getElementById('sync-btn');
+  if (b) { b.textContent = on ? (label||'⟳ Saving…') : '⟳ Sync'; b.disabled = on; }
+  const c = document.getElementById('sync-chip');
+  if (c) { c.className = 'conn-chip '+(state.ghError?'local':'ok'); c.textContent = state.ghError ? '● Sync problem' : '● GitHub · '+(state.lastSync?new Date(state.lastSync).toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'}):'—'); c.title = state.ghError || ('Last synced '+fmtDT(state.lastSync)); }
+}
+// Pull the latest file. Returns {ok, changed, notFound, error}
+async function pull(){
+  const r = await ghGet();
+  if (!r.ok) { state.ghError = r.error; state.offline = !!r.network; setSyncing(state.syncing); return r; }
+  state.ghError = null; state.offline = false; state.lastSync = nowISO();
+  if (r.notFound) { setSyncing(state.syncing); return { ok:true, notFound:true }; }
+  const changed = r.sha !== state.sha;
+  if (changed) applyStore(r.data, r.sha);
+  setSyncing(state.syncing);
+  return { ok:true, changed };
+}
+// Every change goes through commit(): fn(data) edits a fresh copy of the whole store.
+// On a conflict (someone else saved first) we pull and re-apply fn, so no one's change is lost.
+let writeChain = Promise.resolve();
+function commit(message, fn){
+  const p = writeChain.then(()=>doCommit(message, fn));
+  writeChain = p.catch(()=>{});
+  return p;
+}
+class AbortCommit extends Error {}
+async function doCommit(message, fn){
+  if (!ghConfigured()) { toast('No GitHub token on this computer — nothing was saved.','error',6000); return { ok:false }; }
+  setSyncing(true);
+  try {
+    for (let attempt=0; attempt<5; attempt++) {
+      if (attempt>0 || !state.store) { const pr = await pull(); if (!pr.ok) { toast(pr.error+' Nothing was saved.','error',7000); return { ok:false }; } if (pr.notFound && !state.store) applyStore(emptyStore(), null); }
+      const d = clone(state.store || emptyStore());
+      let res;
+      try { res = fn(d); } catch(e) { if (e instanceof AbortCommit) { toast(e.message,'error',6000); return { ok:false }; } throw e; }
+      d.updatedAt = nowISO(); d.updatedBy = state.currentUser?.login || 'system';
+      const w = await ghPut(d, state.sha, message + (state.currentUser?` [${state.currentUser.login}]`:''));
+      if (w.ok) { applyStore(d, w.sha); state.lastSync = nowISO(); state.ghError = null; return { ok:true, res }; }
+      if (w.conflict) { await sleep(300 + Math.random()*500); continue; }
+      state.ghError = w.error; toast(w.error,'error',8000); return { ok:false };
+    }
+    toast('Could not save — the data kept changing on GitHub. Please try again.','error',6000); return { ok:false };
+  } finally { setSyncing(false); }
+}
+const abort = msg => { throw new AbortCommit(msg); };
+const strip = o => { const c = clone(o); delete c.id; return c; };
+async function saveDoc(coll, id, data, message){ return (await commit(message||`Save ${coll}/${id}`, d=>{ d[coll][id] = strip(data); })).ok; }
+async function deleteDoc(coll, id, message){ return (await commit(message||`Delete ${coll}/${id}`, d=>{ delete d[coll][id]; })).ok; }
+async function mutate(coll, id, message, fn){
+  return (await commit(message, d=>{ const cur = d[coll][id]; if (!cur) abort('This record no longer exists (it may have been deleted by someone else).'); const out = fn(clone(cur), d); d[coll][id] = strip(out || cur); })).ok;
+}
+async function ensureFile(){
+  // first run: create roll_data.json with the starting accounts
+  return commit('Initialise Roll Tracker data', d=>{
+    if (Object.keys(d.users).length) return;
+    INITIAL_USERS.forEach(u=>{ d.users[u.id] = { ...strip(u), createdAt: nowISO() }; });
+  });
+}
+async function manualSync(){
+  if (state.syncing) return;
+  setSyncing(true,'⟳ Syncing…');
+  const r = await pull();
+  setSyncing(false);
+  if (r.ok) { toast(r.changed?'Synced with GitHub — new data loaded ✓':'Synced with GitHub ✓'); requestRender(); }
+  else toast(r.error,'error',7000);
+}
+setInterval(async ()=>{ if (state.loggedIn && ghConfigured() && !state.syncing && !document.hidden) { const r = await pull(); if (r.ok && r.changed) requestRender(); } }, POLL_MS);
+window.addEventListener('focus', async ()=>{ if (state.loggedIn && ghConfigured() && !state.syncing) { const r = await pull(); if (r.ok && r.changed) requestRender(); } });
+// ============================================================
+// RENDER SCHEDULING (don't wipe what someone is typing)
+// ============================================================
+function busy(){
+  if (!state.loggedIn) return true;
+  if (document.querySelector('.modal-overlay')) return true;
+  if (FORM_PAGES.includes(state.page)) return true;
+  const ae = document.activeElement;
+  if (ae && ae.closest && ae.closest('.main') && /INPUT|TEXTAREA|SELECT/.test(ae.tagName) && !ae.classList.contains('flt')) return true;
+  return [...document.querySelectorAll('.main textarea, .main input.draft')].some(el => el.value && el.value.trim());
+}
+function requestRender(){
+  if (!state.loggedIn) { updateLoginButton(); return; }
+  if (state.currentUser) { const fresh = state.data.users[state.currentUser.id]; if (fresh) state.currentUser = fresh; else { doLogout(); return; } }
+  if (busy()) { state.pendingRender = true; return; }
+  render();
+}
+setInterval(()=>{ if (state.pendingRender && !busy()) render(); }, 1500);
+setInterval(()=>{ if (state.loggedIn && !busy() && ['dashboard','roll','rolls'].includes(state.page)) render(); }, 60000); // keep out-time clocks moving
+
+// ============================================================
+// RENDER ENGINE
+// ============================================================
+function render(){
+  state.pendingRender = false;
+  const root = document.getElementById('root');
+  const y = window.scrollY;
+  root.innerHTML = '';
+  if (!state.loggedIn) { root.appendChild(renderLogin()); return; }
+  root.appendChild(renderApp());
+  window.scrollTo(0, y);
+}
+
+// ============================================================
+// LOGIN
+// ============================================================
+function renderLogin(){
+  const BUILD_DATE = new Date().toLocaleDateString('en-GB',{day:'2-digit',month:'2-digit',year:'numeric'});
+  const needToken = !ghConfigured() || state.ghError && /401|403|404|token/i.test(state.ghError);
+  const page = document.createElement('div'); page.className = 'login-page';
+  page.innerHTML = `
+    <div class="login-topbar">
+      <div class="login-topbar-left"><span>ROLL</span> TRACKER</div>
+      <span style="font-size:10px;color:var(--text3);letter-spacing:0.08em">${BUILD_DATE}</span>
+    </div>
+    <div class="login-card">
+      <div class="login-logo-wrap">
+        <img src="data:image/jpeg;base64,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" style="width:200px;height:auto;margin:0 auto 16px;display:block" alt="Optimal Group">
+        <h1>Pre-preg Roll Tracker</h1>
+      </div>
+      <div id="login-err">${state.ghError && ghConfigured() ? `<div class="alert alert-error">${esc(state.ghError)}</div>`:''}</div>
+      <div class="form-group"><label>Username</label><input type="text" id="lu" placeholder="enter login" autocomplete="username"></div>
+      <div class="form-group"><label>Password</label><input type="password" id="lp" placeholder="••••••••••••" autocomplete="current-password"></div>
+      ${needToken ? `
+      <div style="border-top:1px solid var(--border);margin:16px 0 14px;padding-top:16px">
+        <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.1em;color:var(--amber);margin-bottom:10px">⚙ ${ghConfigured()?'Update GitHub access token':'First time on this computer'}</div>
+        <div class="form-group" style="margin-bottom:6px">
+          <label>GitHub access token <span style="color:var(--text3);text-transform:none;letter-spacing:0;font-weight:400">(${esc(GH_OWNER)}/${esc(GH_REPO)})</span></label>
+          <input type="password" id="lp-gh" placeholder="github_pat_xxxxxxxx" autocomplete="off">
+        </div>
+        <p style="font-size:10px;color:var(--text3);line-height:1.5">Saved in this browser only. Ask the administrator for the token.</p>
+      </div>` : ''}
+      <button class="btn btn-primary" style="width:100%;justify-content:center;padding:10px" id="login-submit-btn" onclick="doLogin()">Sign in</button>
+      <div id="login-mode" style="margin-top:14px;font-size:10px;color:var(--text3);text-align:center;letter-spacing:0.04em">Data stored in GitHub · ${esc(GH_OWNER)}/${esc(GH_REPO)}</div>
+    </div>`;
+  page.querySelector('#lp').addEventListener('keydown', e=>{ if(e.key==='Enter') doLogin(); });
+  page.querySelector('#lp-gh')?.addEventListener('keydown', e=>{ if(e.key==='Enter') doLogin(); });
+  page.querySelector('#lu').addEventListener('keydown', e=>{ if(e.key==='Enter') page.querySelector('#lp').focus(); });
+  setTimeout(()=>document.getElementById('lu')?.focus(), 30);
+  return page;
+}
+function updateLoginButton(){}
+async function doLogin(){
+  const login = document.getElementById('lu')?.value.trim();
+  const pass  = document.getElementById('lp')?.value;
+  const errEl = document.getElementById('login-err');
+  const tok = document.getElementById('lp-gh')?.value.trim();
+  if (tok) setToken(tok);
+  if (!ghConfigured()) { errEl.innerHTML = '<div class="alert alert-error">Enter the GitHub access token to connect this computer.</div>'; return; }
+  const btn = document.getElementById('login-submit-btn');
+  btn.disabled = true; btn.textContent = '⟳ Syncing with GitHub…';
+  // Pull the latest data BEFORE checking credentials, so users added on other computers are recognised
+  let r = await pull();
+  if (r.ok && r.notFound) { applyStore(emptyStore(), null); const c = await ensureFile(); if (!c.ok) r = { ok:false, error: state.ghError || 'Could not create '+GH_FILE+' in the repository.' }; }
+  btn.disabled = false; btn.textContent = 'Sign in';
+  if (!r.ok) {
+    if (r.network && state.store) { toast('GitHub is unreachable — showing this computer’s last synced data. Changes cannot be saved until the connection returns.','error',9000); }
+    else { if (/401|403|404|token/i.test(r.error||'')) { const keepU=login; render(); document.getElementById('lu').value=keepU||''; return; } errEl.innerHTML = `<div class="alert alert-error">${esc(r.error)}</div>`; return; }
+  }
+  const user = Object.values(state.data.users).find(u => u.login === login && u.pass === pass);
+  if (!user) { errEl.innerHTML = '<div class="alert alert-error">Invalid username or password.</div>'; return; }
+  state.loggedIn = true; state.currentUser = user; state.page = 'dashboard';
+  try { localStorage.setItem(SESSION_KEY, user.id); } catch(e) {}
+  toast('Synced with GitHub ✓');
+  render();
+}
+function doLogout(){ state.loggedIn=false; state.currentUser=null; closeModal(); try{ localStorage.removeItem(SESSION_KEY); }catch(e){} render(); }
+
+// ============================================================
+// APP SHELL
+// ============================================================
+function renderApp(){
+  const u = state.currentUser, admin = isAdmin();
+  const wrap = document.createElement('div'); wrap.className = 'app';
+  const outNow = rolls().filter(r=>rollStats(r).status==='out').length;
+  const topbar = document.createElement('div'); topbar.className = 'topbar';
+  topbar.innerHTML = `
+    <div class="topbar-title"><span>ROLL</span> TRACKER</div>
+    <div class="topbar-sep"></div>
+    <div class="topbar-user">Logged in as <strong>${esc(u.login)}</strong></div>
+    <div class="topbar-right">
+      <span id="sync-chip" class="conn-chip ${state.ghError?'local':'ok'}" title="${esc(state.ghError||('Last synced '+fmtDT(state.lastSync)))}">${state.ghError?'● Sync problem':'● GitHub · '+(state.lastSync?new Date(state.lastSync).toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'}):'—')}</span>
+      <button id="sync-btn" onclick="manualSync()" ${state.syncing?'disabled':''} style="background:transparent;border:1px solid var(--border);color:var(--text2);padding:5px 10px;border-radius:var(--radius);cursor:pointer;font-family:var(--font);font-size:10px;letter-spacing:0.06em;text-transform:uppercase">${state.syncing?'⟳ Saving…':'⟳ Sync'}</button>
+      <img src="data:image/jpeg;base64,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" style="height:70px;width:auto;border-radius:4px" alt="Optimal Group">
+    </div>`;
+  wrap.appendChild(topbar);
+
+  const body = document.createElement('div'); body.className = 'app-body';
+  const sb = document.createElement('div'); sb.className = 'sidebar';
+  const a = (p, icon, label, extra='') => `<a onclick="nav('${p}')" class="${state.page===p || (p==='rolls'&&state.page==='roll') ?'active':''}">${svgIcon(icon)} ${label}${extra}</a>`;
+  sb.innerHTML = `
+    <div class="sidebar-user"><div class="name">${esc(u.name)}</div><div class="role">${admin?'Administrator':'User'}</div></div>
+    <nav>
+      <div class="nav-section">Navigation</div>
+      ${a('dashboard','grid','Dashboard')}
+      ${a('rolls','roll','Rolls', outNow?`<span style="margin-left:auto;background:var(--amber);color:#0f1117;border-radius:2px;padding:0 5px;font-size:9px;font-weight:700" title="Rolls out of cold storage">${outNow}</span>`:'')}
+      <a onclick="openRollForm(null)" class="${state.page==='rollform'&&!state.editRollId?'active':''}">${svgIcon('plus')} New Roll</a>
+      ${a('projects','folder','Projects & Parts')}
+      ${a('consumption','chart','Consumption')}
+      ${a('password','key','Change Password')}
+      ${admin?`<div class="nav-section">Admin</div>${a('users','users','Users')}${a('storage','settings','GitHub Storage', state.ghError?' <span style="color:var(--amber);margin-left:4px">⚠</span>':'')}`:''}
+    </nav>
+    <div class="sidebar-footer"><button class="logout-btn" onclick="doLogout()">${svgIcon('logout')} Sign out</button></div>`;
+  body.appendChild(sb);
+
+  const main = document.createElement('div'); main.className = 'main';
+  if (state.ghError) main.insertAdjacentHTML('beforeend', `<div class="alert alert-warning">${esc(state.ghError)} ${state.offline?'Showing the last data synced on this computer; changes cannot be saved right now.':''}</div>`);
+  const pages = { dashboard:renderDashboard, rolls:renderRolls, roll:renderRollDetail, rollform:renderRollForm, projects:renderProjects, consumption:renderConsumption, users:renderUsers, password:renderChangePassword, storage:renderStorage };
+  if ((state.page==='users'||state.page==='storage') && !admin) state.page='dashboard';
+  main.appendChild((pages[state.page]||renderDashboard)());
+  body.appendChild(main);
+  wrap.appendChild(body);
+  return wrap;
+}
+function nav(page){ closeModal(); state.page=page; if(page!=='rollform') state.editRollId=null; render(); window.scrollTo(0,0); }
+function openRoll(id){ state.rollId=id; nav('roll'); }
+function openRollForm(id){ state.editRollId=id; closeModal(); state.page='rollform'; render(); window.scrollTo(0,0); }
+
+// ============================================================
+// MODALS
+// ============================================================
+function openModal(html, opts={}){
+  closeModal();
+  const ov = document.createElement('div'); ov.className = 'modal-overlay';
+  ov.innerHTML = `<div class="modal ${opts.wide?'wide':''}" role="dialog" aria-modal="true">${html}</div>`;
+  ov.addEventListener('mousedown', e=>{ if (e.target===ov) closeModal(); });
+  document.body.appendChild(ov);
+  setTimeout(()=>ov.querySelector('input:not([type=hidden]),select,textarea')?.focus(), 30);
+  return ov;
+}
+function closeModal(){ document.querySelectorAll('.modal-overlay').forEach(m=>m.remove()); }
+document.addEventListener('keydown', e=>{ if (e.key==='Escape') closeModal(); });
+let _confirmFn = null;
+function confirmBox(title, text, fn, label='Delete'){
+  _confirmFn = fn;
+  openModal(`<h3>${esc(title)}</h3><div class="modal-desc">${text}</div>
+    <div class="modal-actions"><button class="btn btn-outline" onclick="closeModal()">Cancel</button>
+    <button class="btn btn-danger" onclick="(async()=>{const f=_confirmFn;closeModal();await f();})()">${esc(label)}</button></div>`);
+}
+
+// ============================================================
+// DASHBOARD
+// ============================================================
+function renderDashboard(){
+  const u = state.currentUser;
+  const rs = rolls().map(r=>({r, s:rollStats(r)}));
+  const active = rs.filter(x=>x.s.status==='stored'||x.s.status==='out');
+  const out = rs.filter(x=>x.s.status==='out');
+  const stockM = active.reduce((t,x)=>t+x.s.remaining,0);
+  const stockA = active.reduce((t,x)=>t+x.s.area,0);
+  const alerts = active.filter(x=>x.s.expired||x.s.warn);
+  const div = document.createElement('div');
+  div.innerHTML = `
+    <div class="page-header"><h2>Welcome back, ${esc(u.name.split(' ')[0])}</h2><p>${new Date().toLocaleDateString('en-GB',{weekday:'long',year:'numeric',month:'long',day:'numeric'})}</p></div>
+    <div class="stats-row">
+      <div class="stat-card"><div class="label">Active rolls</div><div class="value">${active.length}</div></div>
+      <div class="stat-card"><div class="label">Live stock</div><div class="value" style="color:var(--cyan)">${num(stockM,1)}<span style="font-size:13px;color:var(--text2)"> m</span></div><div class="dim" style="font-size:10px">${num(stockA,1)} m²</div></div>
+      <div class="stat-card"><div class="label">Out of cold storage now</div><div class="value" style="color:${out.length?'var(--amber)':'var(--text)'}">${out.length}</div></div>
+      <div class="stat-card"><div class="label">Life alerts</div><div class="value" style="color:${alerts.some(x=>x.s.expired)?'var(--red)':alerts.length?'var(--amber)':'var(--text)'}">${alerts.length}</div></div>
+    </div>`;
+
+  const outCard = document.createElement('div'); outCard.className='card'; outCard.style.marginBottom='20px';
+  outCard.innerHTML = `<div class="section-title">Currently out of cold storage</div>` + (out.length ? `
+    <div class="table-wrap"><table><thead><tr><th>Serial</th><th>Material</th><th>Removed</th><th>By</th><th>This session</th><th>Out-life used</th><th></th></tr></thead><tbody>
+    ${out.map(({r,s})=>`<tr class="clickrow" onclick="openRoll('${r.id}')">
+      <td class="serial">${esc(serialStr(r.serial))}</td><td>${esc(r.material||'—')}</td><td>${fmtDT(s.open.outAt)}</td><td>${esc(userName(s.open.by))}</td>
+      <td style="color:var(--amber);font-weight:600">${fmtDur(Date.now()-new Date(s.open.outAt).getTime())}</td>
+      <td>${s.outLeftMs===null?'<span class="dim">no limit set</span>':`<div class="bar ${barClass(s.outPct,true)}"><i style="width:${Math.min(100,s.outPct)}%"></i></div><span class="dim" style="font-size:10px">${num(s.outPct,0)}% · ${s.outLeftMs>0?fmtDur(s.outLeftMs)+' left':'exceeded'}</span>`}</td>
+      <td onclick="event.stopPropagation()"><button class="btn btn-success btn-sm" onclick="quickReturn('${r.id}')">${svgIcon('snow')} Return</button></td></tr>`).join('')}
+    </tbody></table></div>` : `<div class="empty">All rolls are in cold storage.</div>`);
+  div.appendChild(outCard);
+
+  const two = document.createElement('div'); two.className='grid2'; two.style.alignItems='start';
+  const alCard = document.createElement('div'); alCard.className='card';
+  alCard.innerHTML = `<div class="section-title">Life alerts</div>` + (alerts.length ? `<div class="alert-list">${alerts.map(({r,s})=>{
+    const msgs=[];
+    if (s.outLeftMs!==null && s.outPct>=80) msgs.push(s.outPct>=100?`Out-life exceeded by ${fmtDur(-s.outLeftMs)}`:`Out-life ${num(s.outPct,0)}% used`);
+    if (s.coldDaysLeft!==null && s.coldDaysLeft<=30) msgs.push(s.coldDaysLeft<0?`Cold-storage life expired ${fmtDate(s.coldExpiry.toISOString())}`:`Cold-storage life ends in ${s.coldDaysLeft} d`);
+    return `<div class="al" onclick="openRoll('${r.id}')"><span class="badge ${s.expired?'badge-red':'badge-amber'}">${s.expired?'Expired':'Warning'}</span><span class="serial">${esc(serialStr(r.serial))}</span><span class="muted">${esc(msgs.join(' · '))}</span></div>`;}).join('')}</div>` : `<div class="empty">No rolls near end of life.</div>`);
+  two.appendChild(alCard);
+
+  const recent = [];
+  rolls().forEach(r=>(r.usages||[]).forEach(us=>recent.push({r,us})));
+  recent.sort((a,b)=>new Date(b.us.outAt)-new Date(a.us.outAt));
+  const rcCard = document.createElement('div'); rcCard.className='card';
+  rcCard.innerHTML = `<div class="section-title">Recent material withdrawals</div>` + (recent.length ? `<div class="table-wrap"><table><thead><tr><th>Date</th><th>Roll</th><th>Project</th><th style="text-align:right">m</th></tr></thead><tbody>
+    ${recent.slice(0,8).map(({r,us})=>`<tr class="clickrow" onclick="openRoll('${r.id}')"><td>${fmtDate(us.outAt)}</td><td class="serial">${esc(serialStr(r.serial))}</td><td>${esc(us.projectName||'—')}</td><td style="text-align:right;font-weight:600">${num(us.meters)}</td></tr>`).join('')}
+    </tbody></table></div>` : `<div class="empty">No material withdrawn yet.</div>`);
+  two.appendChild(rcCard);
+  div.appendChild(two);
+  return div;
+}
+
+// ============================================================
+// ROLL LIST
+// ============================================================
+function renderRolls(){
+  const div = document.createElement('div');
+  div.innerHTML = `
+    <div class="page-header" style="display:flex;justify-content:space-between;align-items:flex-end;gap:12px;flex-wrap:wrap">
+      <div><h2>Rolls</h2><p>Every pre-preg roll registered at OPTIMAL, with live remaining length and storage life</p></div>
+      <button class="btn btn-primary" onclick="openRollForm(null)">${svgIcon('plus')} New Roll</button>
+    </div>
+    <div class="toolbar">
+      <div class="form-group" style="flex:1;min-width:200px"><label>Search</label><input type="text" class="flt" id="rf-q" placeholder="Serial, material, supplier, supplier S/N…" value="${esc(state.filters.q)}"></div>
+      <div class="form-group"><label>Status</label><select class="flt" id="rf-s">
+        ${[['active','Active (stored + out)'],['stored','In cold storage'],['out','Out of storage'],['alerts','Life alerts'],['depleted','Depleted'],['archived','Archived'],['all','All rolls']].map(([v,l])=>`<option value="${v}" ${state.filters.status===v?'selected':''}>${l}</option>`).join('')}
+      </select></div>
+    </div>
+    <div class="card" style="padding:0"><div id="roll-table"></div></div>`;
+  setTimeout(()=>{
+    const q=document.getElementById('rf-q'), s=document.getElementById('rf-s');
+    q?.addEventListener('input', ()=>{ state.filters.q=q.value; fillRollTable(); });
+    s?.addEventListener('change', ()=>{ state.filters.status=s.value; fillRollTable(); });
+    fillRollTable();
+  },0);
+  return div;
+}
+function fillRollTable(){
+  const el = document.getElementById('roll-table'); if (!el) return;
+  const q = state.filters.q.trim().toLowerCase(), f = state.filters.status;
+  const list = rolls().map(r=>({r,s:rollStats(r)})).filter(({r,s})=>{
+    if (f==='active' && !(s.status==='stored'||s.status==='out')) return false;
+    if (['stored','out','depleted','archived'].includes(f) && s.status!==f) return false;
+    if (f==='alerts' && !((s.expired||s.warn) && (s.status==='stored'||s.status==='out'))) return false;
+    if (!q) return true;
+    return [serialStr(r.serial), r.material, r.supplier, r.supplierSN].some(v=>String(v||'').toLowerCase().includes(q));
+  });
+  if (!list.length) { el.innerHTML = `<div class="empty">${rolls().length? 'No rolls match these filters.' : 'No rolls yet — create the first one with “New Roll”.'}</div>`; return; }
+  el.innerHTML = `<div class="table-wrap"><table><thead><tr><th>Serial</th><th>Material</th><th>Supplier</th><th>Supplier S/N</th><th style="text-align:right">Width</th><th>Remaining</th><th>Out-life used</th><th>Cold life until</th><th>Status</th></tr></thead><tbody>
+  ${list.map(({r,s})=>`<tr class="clickrow" onclick="openRoll('${r.id}')">
+    <td class="serial">${esc(serialStr(r.serial))}</td>
+    <td>${esc(r.material||'—')}</td><td>${esc(r.supplier||'—')}</td><td class="muted">${esc(r.supplierSN||'—')}</td>
+    <td style="text-align:right">${r.width?num(r.width,0)+' mm':'—'}</td>
+    <td><div style="font-weight:600">${num(s.remaining)} <span class="dim">/ ${num(s.initial,0)} m</span></div><div class="bar ${barClass(s.remPct)}"><i style="width:${Math.max(0,Math.min(100,s.remPct))}%"></i></div></td>
+    <td>${s.outLeftMs===null?'<span class="dim">—</span>':`<div class="dim" style="font-size:10px">${fmtDur(s.outMs)} · ${num(s.outPct,0)}%</div><div class="bar ${barClass(s.outPct,true)}"><i style="width:${Math.min(100,s.outPct)}%"></i></div>`}</td>
+    <td style="${s.coldDaysLeft!==null&&s.coldDaysLeft<0?'color:var(--red)':s.coldDaysLeft!==null&&s.coldDaysLeft<=30?'color:var(--amber)':''}">${s.coldExpiry?fmtDate(s.coldExpiry.toISOString()):'—'}</td>
+    <td>${statusBadge(s)}</td></tr>`).join('')}
+  </tbody></table></div>`;
+}
+
+// ============================================================
+// ROLL FORM (create / edit)
+// ============================================================
+function renderRollForm(){
+  const r = state.editRollId ? state.data.rolls[state.editRollId] : null;
+  const div = document.createElement('div');
+  if (state.editRollId && !r) { div.innerHTML = `<div class="empty">This roll no longer exists.</div>`; return div; }
+  const v = k => esc(r?.[k] ?? '');
+  div.innerHTML = `
+    <div class="page-header"><h2>${r?`Edit roll <span>${esc(serialStr(r.serial))}</span>`:'Register new roll'}</h2>
+      <p>${r?'Changes are recorded in the roll’s activity log.':'A unique sequential serial number is assigned when the roll is saved. It stays with the roll for its whole life.'}</p></div>
+    <div class="card" style="max-width:900px">
+      <div class="section-title">Material</div>
+      <div class="grid2" style="margin-bottom:16px">
+        <div class="form-group" style="margin:0"><label class="req">Material designation</label><input type="text" id="f-material" value="${v('material')}" placeholder="e.g. Carbon UD 200 gsm / epoxy 120 °C"></div>
+        <div class="form-group" style="margin:0"><label class="req">Material supplier</label><input type="text" id="f-supplier" value="${v('supplier')}" placeholder="Supplier name" list="dl-suppliers"></div>
+        <div class="form-group" style="margin:0"><label>Supplier serial number</label><input type="text" id="f-sn" value="${v('supplierSN')}" placeholder="Supplier roll / batch S/N"></div>
+        <div class="form-group" style="margin:0"><label class="req">Roll arrival at OPTIMAL</label><input type="date" id="f-arrival" value="${toDateInput(r?.arrival) || toDateInput(nowISO())}"></div>
+      </div>
+      <datalist id="dl-suppliers">${[...new Set(rolls().map(x=>x.supplier).filter(Boolean))].map(s=>`<option value="${esc(s)}">`).join('')}</datalist>
+      <div class="section-title">Storage life</div>
+      <div class="grid2" style="margin-bottom:16px">
+        <div class="form-group" style="margin:0"><label>Roll life in cold storage (months)</label><input type="number" min="0" step="0.5" id="f-cold" value="${v('lifeColdMonths')}" placeholder="e.g. 12"><div class="dim" style="font-size:10px;margin-top:4px">Counted from arrival at OPTIMAL.</div></div>
+        <div class="form-group" style="margin:0"><label>Roll life out of storage (days)</label><input type="number" min="0" step="0.5" id="f-out" value="${v('lifeOutDays')}" placeholder="e.g. 30"><div class="dim" style="font-size:10px;margin-top:4px">Cumulative time outside cold storage.</div></div>
+      </div>
+      <div class="section-title">Dimensions</div>
+      <div class="grid2" style="margin-bottom:16px">
+        <div class="form-group" style="margin:0"><label class="req">Roll width (mm)</label><input type="number" min="0" step="1" id="f-width" value="${v('width')}" placeholder="e.g. 1250"></div>
+        <div class="form-group" style="margin:0"><label class="req">Roll initial length (m)</label><input type="number" min="0" step="0.01" id="f-length" value="${v('initialLength')}" placeholder="e.g. 50"></div>
+      </div>
+      ${r?'':`<div class="section-title">First note (optional)</div><div class="form-group"><textarea id="f-note" placeholder="Anything relevant on reception: packaging condition, certificate received, storage location…"></textarea></div>`}
+      <div id="f-msg"></div>
+      <div class="btn-group">
+        <button class="btn btn-primary" id="f-save">${svgIcon('check')} ${r?'Save changes':'Create roll'}</button>
+        <button class="btn btn-outline" onclick="${r?`openRoll('${r.id}')`:`nav('rolls')`}">Cancel</button>
+      </div>
+    </div>`;
+  setTimeout(()=>{ document.getElementById('f-save').onclick = saveRollForm; },0);
+  return div;
+}
+async function saveRollForm(){
+  const g = id => document.getElementById(id)?.value?.trim() || '';
+  const msg = document.getElementById('f-msg');
+  const data = { material:g('f-material'), supplier:g('f-supplier'), supplierSN:g('f-sn'),
+    arrival: g('f-arrival') ? new Date(g('f-arrival')+'T12:00:00').toISOString() : null,
+    lifeColdMonths: g('f-cold')===''?null:Number(g('f-cold')), lifeOutDays: g('f-out')===''?null:Number(g('f-out')),
+    width: g('f-width')===''?null:Number(g('f-width')), initialLength: g('f-length')===''?null:Number(g('f-length')) };
+  if (!data.material || !data.supplier || !data.arrival || !data.width || !data.initialLength) { msg.innerHTML = '<div class="alert alert-error">Material, supplier, arrival date, width and initial length are required.</div>'; return; }
+  const btn = document.getElementById('f-save'); btn.disabled = true;
+  const by = state.currentUser.login, at = nowISO();
+  if (state.editRollId) {
+    const id = state.editRollId;
+    const labels = {material:'material',supplier:'supplier',supplierSN:'supplier S/N',arrival:'arrival',lifeColdMonths:'cold-storage life',lifeOutDays:'out-of-storage life',width:'width',initialLength:'initial length'};
+    const ok = await mutate('rolls', id, `Edit roll ${serialStr(state.data.rolls[id].serial)}`, r=>{
+      const used = rollStats(r).used;
+      if (data.initialLength < used) abort('Initial length can’t be less than the material already withdrawn ('+num(used)+' m).');
+      const changed = Object.keys(labels).filter(k => String(r[k]??'') !== String(data[k]??''));
+      Object.assign(r, data, { updatedAt:at, updatedBy:by });
+      if (changed.length) (r.history = r.history||[]).push({ at, by, action:'Edited roll: '+changed.map(k=>labels[k]).join(', ') });
+      return r;
+    });
+    if (ok) { toast('Roll updated ✓'); openRoll(id); } else btn.disabled=false;
+  } else {
+    const note = g('f-note');
+    // serial is reserved inside the commit: if two people create a roll at once, the second one retries with the next number
+    const c = await commit('Register new roll', d=>{
+      const maxExisting = Object.values(d.rolls).reduce((m,r)=>Math.max(m, r.serial||0), 0);
+      const serial = Math.max(Number(d.meta.nextSerial||1), maxExisting+1);
+      d.meta.nextSerial = serial + 1;
+      const id = 'roll-' + String(serial).padStart(5,'0');
+      d.rolls[id] = { ...data, serial, createdAt:at, createdBy:by, usages:[], notes: note?[{id:uid(),text:note,at,by}]:[], history:[{at,by,action:'Roll registered as '+serialStr(serial)}], archived:false };
+      return { id, serial };
+    });
+    if (c.ok) { toast(`Roll ${serialStr(c.res.serial)} created ✓`); state.editRollId=null; openRoll(c.res.id); } else btn.disabled=false;
+  }
+}
+// ============================================================
+// ROLL DETAIL
+// ============================================================
+function renderRollDetail(){
+  const r = state.data.rolls[state.rollId];
+  const div = document.createElement('div');
+  if (!r) { div.innerHTML = `<div class="empty">This roll no longer exists. <a href="#" onclick="nav('rolls');return false" style="color:var(--cyan)">Back to rolls</a></div>`; return div; }
+  const s = rollStats(r), admin = isAdmin();
+  const usages = (r.usages||[]).map((u,i)=>({u,i})).sort((a,b)=>new Date(b.u.outAt)-new Date(a.u.outAt));
+  div.innerHTML = `
+    <div style="margin-bottom:14px"><button class="btn btn-outline btn-sm" onclick="nav('rolls')">← All rolls</button></div>
+    <div class="card" style="margin-bottom:20px">
+      <div class="roll-hero">
+        <div>
+          <div class="big-serial">${esc(serialStr(r.serial))}</div>
+          <div class="sub">${esc(r.material||'')} · ${esc(r.supplier||'')}</div>
+          <div style="margin-top:10px">${statusBadge(s)}</div>
+        </div>
+        <div class="btn-group">
+          ${s.status!=='archived'&&s.status!=='depleted'&&!s.open?`<button class="btn btn-primary" onclick="openUsageModal('${r.id}',null)">${svgIcon('plus')} Withdraw material</button>`:''}
+          ${s.open?`<button class="btn btn-success" onclick="quickReturn('${r.id}')">${svgIcon('snow')} Return to cold storage</button>`:''}
+          <button class="btn btn-outline" onclick="openRollForm('${r.id}')">${svgIcon('edit')} Edit roll</button>
+          <button class="btn btn-outline" onclick="toggleArchive('${r.id}')">${svgIcon('archive')} ${r.archived?'Restore':'Archive'}</button>
+          ${admin?`<button class="btn btn-danger" onclick="deleteRoll('${r.id}')">${svgIcon('trash')} Delete</button>`:''}
+        </div>
+      </div>
+      <div class="grid4" style="margin-bottom:16px">
+        <div class="gauge"><div class="k">Remaining length</div><div class="v">${num(s.remaining)} <small>/ ${num(s.initial)} m</small></div><div class="bar ${barClass(s.remPct)}"><i style="width:${Math.max(0,Math.min(100,s.remPct))}%"></i></div><div class="dim" style="font-size:10px;margin-top:6px">${num(s.area,2)} m² · ${num(s.used)} m withdrawn</div></div>
+        <div class="gauge"><div class="k">Time out of storage</div><div class="v">${fmtDur(s.outMs)}${s.outLeftMs!==null?` <small>/ ${num(r.lifeOutDays,1)} d</small>`:''}</div>${s.outLeftMs!==null?`<div class="bar ${barClass(s.outPct,true)}"><i style="width:${Math.min(100,s.outPct)}%"></i></div><div class="dim" style="font-size:10px;margin-top:6px">${s.outLeftMs>0?fmtDur(s.outLeftMs)+' remaining':'<span style="color:var(--red)">Out-life exceeded</span>'}</div>`:'<div class="dim" style="font-size:10px">No out-life set</div>'}</div>
+        <div class="gauge"><div class="k">Cold-storage life until</div><div class="v" style="${s.coldDaysLeft!==null&&s.coldDaysLeft<0?'color:var(--red)':s.coldDaysLeft!==null&&s.coldDaysLeft<=30?'color:var(--amber)':''}">${s.coldExpiry?fmtDate(s.coldExpiry.toISOString()):'—'}</div><div class="dim" style="font-size:10px">${s.coldDaysLeft===null?'No cold-storage life set':s.coldDaysLeft<0?`Expired ${-s.coldDaysLeft} d ago`:`${s.coldDaysLeft} d remaining`}</div></div>
+        <div class="gauge"><div class="k">Withdrawals</div><div class="v">${(r.usages||[]).length}</div><div class="dim" style="font-size:10px">${[...new Set((r.usages||[]).map(u=>u.projectName).filter(Boolean))].length} project(s)</div></div>
+      </div>
+      <div class="po-grid">
+        <div class="po-field"><div class="key">Material supplier</div><div class="val">${esc(r.supplier||'—')}</div></div>
+        <div class="po-field"><div class="key">Supplier serial number</div><div class="val">${esc(r.supplierSN||'—')}</div></div>
+        <div class="po-field"><div class="key">Roll arrival at OPTIMAL</div><div class="val">${fmtDate(r.arrival)}</div></div>
+        <div class="po-field"><div class="key">Roll width</div><div class="val">${r.width?num(r.width,0)+' mm':'—'}</div></div>
+        <div class="po-field"><div class="key">Roll life in cold storage</div><div class="val">${r.lifeColdMonths!=null?num(r.lifeColdMonths,1)+' months':'—'}</div></div>
+        <div class="po-field"><div class="key">Roll life out of storage</div><div class="val">${r.lifeOutDays!=null?num(r.lifeOutDays,1)+' days':'—'}</div></div>
+        <div class="po-field"><div class="key">Roll initial length</div><div class="val">${num(r.initialLength)} m</div></div>
+        <div class="po-field"><div class="key">Registered</div><div class="val">${fmtDT(r.createdAt)} · ${esc(userName(r.createdBy))}</div></div>
+      </div>
+    </div>
+
+    <div class="grid2" style="grid-template-columns:minmax(0,3fr) minmax(0,2fr);align-items:start">
+      <div>
+        <div class="section-title">Material withdrawals (${usages.length})</div>
+        ${usages.length? usages.map(({u,i})=>usageCard(r,u,usages.length - usages.findIndex(x=>x.i===i), admin)).join('') : `<div class="card"><div class="empty">No material withdrawn from this roll yet.</div></div>`}
+      </div>
+      <div>
+        <div class="card" style="margin-bottom:16px">
+          <div class="section-title">Notes</div>
+          <div class="form-group"><textarea id="note-text" placeholder="Add a relevant note — it will be stored with your name and the time."></textarea></div>
+          <button class="btn btn-blue btn-sm" onclick="addNote('${r.id}')">${svgIcon('plus')} Add note</button>
+          <div style="margin-top:12px">${(r.notes||[]).length? [...r.notes].reverse().map(n=>`
+            <div class="note"><div class="meta"><span><strong>${esc(userName(n.by))}</strong> · ${fmtDT(n.at)}</span>${admin?`<button class="del-btn" style="width:22px;height:22px;font-size:12px" title="Delete note" onclick="deleteNote('${r.id}','${n.id}')">×</button>`:''}</div><div class="txt">${esc(n.text)}</div></div>`).join('') : '<div class="dim" style="font-size:11px">No notes yet.</div>'}</div>
+        </div>
+        <div class="card">
+          <div class="section-title">Activity log</div>
+          <div class="timeline">${[...(r.history||[])].reverse().slice(0,30).map(h=>`
+            <div class="timeline-item"><div class="timeline-dot">·</div><div class="timeline-body"><div class="who">${esc(userName(h.by))}</div><div class="when">${fmtDT(h.at)}</div><div class="what">${esc(h.action)}</div></div></div>`).join('') || '<div class="dim">—</div>'}</div>
+        </div>
+      </div>
+    </div>`;
+  return div;
+}
+function usageCard(r, u, n, admin){
+  const dur = (u.inAt?new Date(u.inAt):new Date()) - new Date(u.outAt);
+  return `<div class="usage-card ${u.inAt?'':'open'}">
+    <div class="uc-head"><span class="uc-num">WITHDRAWAL #${n}</span>${u.inAt?'<span class="badge badge-cyan">Back in storage</span>':'<span class="badge badge-amber">Still out</span>'}
+      <span style="margin-left:auto" class="btn-group">
+        ${u.inAt?'':`<button class="btn btn-success btn-sm" onclick="quickReturn('${r.id}')">${svgIcon('snow')} Return now</button>`}
+        <button class="btn btn-outline btn-sm" onclick="openUsageModal('${r.id}','${u.id}')">${svgIcon('edit')} Edit</button>
+        ${admin?`<button class="btn btn-danger btn-sm" onclick="deleteUsage('${r.id}','${u.id}')">${svgIcon('trash')}</button>`:''}
+      </span></div>
+    <div class="uc-grid">
+      <div><div class="k">Removed from cold storage</div><div class="v">${fmtDT(u.outAt)}</div></div>
+      <div><div class="k">Put back in cold storage</div><div class="v">${u.inAt?fmtDT(u.inAt):'<span style="color:var(--amber)">—</span>'}</div></div>
+      <div><div class="k">Time out</div><div class="v" style="${u.inAt?'':'color:var(--amber)'}">${fmtDur(Math.max(0,dur))}</div></div>
+      <div><div class="k">Linear meters removed</div><div class="v" style="font-weight:700;color:var(--cyan)">${num(u.meters)} m</div></div>
+      <div><div class="k">Project</div><div class="v">${esc(u.projectName||'—')}</div></div>
+    </div>
+    <div style="margin-top:10px"><div class="k" style="font-size:9px;color:var(--text3);text-transform:uppercase;letter-spacing:0.1em;font-weight:600;margin-bottom:4px">Parts</div>${partsChips(u.parts)}</div>
+    ${u.remark?`<div class="muted" style="margin-top:8px;font-size:11px">${esc(u.remark)}</div>`:''}
+    <div class="uc-foot"><span>Recorded by ${esc(userName(u.by))} · ${fmtDT(u.at)}${u.editedAt?` · edited by ${esc(userName(u.editedBy))} ${fmtDT(u.editedAt)}`:''}</span></div>
+  </div>`;
+}
+
+// ---- Usage modal ----
+let _usageCtx = null;
+function openUsageModal(rollId, usageId){
+  const r = state.data.rolls[rollId]; if (!r) return;
+  const u = usageId ? (r.usages||[]).find(x=>x.id===usageId) : null;
+  if (!projects().length) { toast('Create at least one project (with its parts) in “Projects & Parts” first.', 'error', 6000); return; }
+  _usageCtx = { rollId, usageId, parts: clone(u?.parts||[]) };
+  const s = rollStats(r);
+  const avail = s.remaining + (u?Number(u.meters||0):0);
+  openModal(`
+    <h3>${u?'Edit withdrawal':'Withdraw material'} — ${esc(serialStr(r.serial))}</h3>
+    <div class="modal-desc">${esc(r.material||'')} · available on roll: <strong style="color:var(--cyan)">${num(avail)} m</strong></div>
+    <div class="grid2">
+      <div class="form-group"><label class="req">Removed from cold storage</label><input type="datetime-local" id="u-out" value="${toLocalInput(u?.outAt||nowISO())}"></div>
+      <div class="form-group"><label>Put back in cold storage</label><input type="datetime-local" id="u-in" value="${toLocalInput(u?.inAt)}"><div class="dim" style="font-size:10px;margin-top:4px">Leave empty while the roll is still out.</div></div>
+      <div class="form-group"><label class="req">Linear meters removed</label><input type="number" min="0" step="0.01" id="u-m" value="${u?esc(u.meters):''}" placeholder="m"></div>
+      <div class="form-group"><label class="req">Project</label><select id="u-p"><option value="">— select project —</option>${projects().map(p=>`<option value="${p.id}" ${u?.projectId===p.id?'selected':''}>${esc((p.code?p.code+' — ':'')+p.name)}</option>`).join('')}</select></div>
+    </div>
+    <div class="form-group"><label>Parts made with this material <span class="dim" style="text-transform:none;letter-spacing:0;font-weight:400">— set the quantity for each part (sets of the same part allowed)</span></label><div id="u-parts"></div></div>
+    <div class="form-group"><label>Remark (optional)</label><input type="text" id="u-rem" value="${esc(u?.remark||'')}" placeholder="e.g. ply kit for mould 2"></div>
+    <div id="u-msg"></div>
+    <div class="modal-actions"><button class="btn btn-outline" onclick="closeModal()">Cancel</button><button class="btn btn-primary" id="u-save" onclick="saveUsage()">${svgIcon('check')} Save</button></div>`, {wide:true});
+  document.getElementById('u-p').addEventListener('change', ()=>{ _usageCtx.parts = []; renderPartPicker(); });
+  renderPartPicker();
+}
+function renderPartPicker(){
+  const el = document.getElementById('u-parts'); if (!el) return;
+  const pid = document.getElementById('u-p').value;
+  const p = state.data.projects[pid];
+  if (!pid) { el.innerHTML = '<div class="dim" style="font-size:11px;padding:8px 0">Select a project to list its parts.</div>'; return; }
+  const parts = p?.parts||[];
+  // keep any previously-recorded parts that were removed from the project definition
+  const extra = _usageCtx.parts.filter(x=>x.qty>0 && !parts.some(pp=>pp.id===x.partId));
+  if (!parts.length && !extra.length) { el.innerHTML = '<div class="alert alert-info" style="margin:0">No parts defined for this project yet — add them in “Projects & Parts”.</div>'; return; }
+  const qtyOf = id => _usageCtx.parts.find(x=>x.partId===id)?.qty || 0;
+  el.innerHTML = `<div class="part-pick">${[...parts.map(pp=>({id:pp.id,name:pp.name,pn:pp.pn})), ...extra.map(x=>({id:x.partId,name:x.name,pn:x.pn,gone:true}))].map(pp=>{
+    const q = qtyOf(pp.id);
+    return `<div class="part-row ${q>0?'on':''}"><div class="pn">${esc(pp.name)}${pp.gone?' <span class="badge badge-gray">removed from project</span>':''}<small>${esc(pp.pn||'')}</small></div>
+      <div class="qty"><button type="button" onclick="setQty('${pp.id}',-1)" aria-label="Decrease">−</button><input type="number" min="0" step="1" value="${q}" onchange="setQty('${pp.id}',0,this.value)" aria-label="Quantity of ${esc(pp.name)}"><button type="button" onclick="setQty('${pp.id}',1)" aria-label="Increase">+</button></div></div>`;
+  }).join('')}</div>`;
+}
+function setQty(partId, delta, abs){
+  const pid = document.getElementById('u-p').value; const p = state.data.projects[pid];
+  let item = _usageCtx.parts.find(x=>x.partId===partId);
+  const def = (p?.parts||[]).find(x=>x.id===partId);
+  if (!item) { item = { partId, name:def?.name||'', pn:def?.pn||'', qty:0 }; _usageCtx.parts.push(item); }
+  item.qty = Math.max(0, Math.round(abs!==undefined ? Number(abs)||0 : item.qty + delta));
+  renderPartPicker();
+}
+async function saveUsage(){
+  const g = id => document.getElementById(id)?.value?.trim() || '';
+  const msg = document.getElementById('u-msg');
+  const outAt = fromLocalInput(g('u-out')), inAt = fromLocalInput(g('u-in'));
+  const meters = Number(g('u-m')); const pid = g('u-p'); const p = state.data.projects[pid];
+  if (!outAt) return msg.innerHTML = '<div class="alert alert-error">Enter when the roll was removed from cold storage.</div>';
+  if (inAt && new Date(inAt) < new Date(outAt)) return msg.innerHTML = '<div class="alert alert-error">The return time must be after the removal time.</div>';
+  if (!(meters > 0)) return msg.innerHTML = '<div class="alert alert-error">Enter the linear meters removed.</div>';
+  if (!p) return msg.innerHTML = '<div class="alert alert-error">Select the project.</div>';
+  const ctx = clone(_usageCtx);
+  const parts = ctx.parts.filter(x=>x.qty>0).map(x=>{ const d=(p.parts||[]).find(pp=>pp.id===x.partId); return { partId:x.partId, name:d?.name||x.name, pn:d?.pn||x.pn||'', qty:x.qty }; });
+  const by = state.currentUser.login, at = nowISO();
+  const body = { outAt, inAt, meters, projectId:p.id, projectName:(p.code?p.code+' — ':'')+p.name, parts, remark:g('u-rem') };
+  const saveBtn = document.getElementById('u-save'); if (saveBtn) { saveBtn.disabled = true; saveBtn.textContent = 'Saving…'; }
+  const ok = await mutate('rolls', ctx.rollId, `${ctx.usageId?'Edit':'Record'} withdrawal ${num(meters)} m — ${serialStr(state.data.rolls[ctx.rollId].serial)}`, r=>{
+    r.usages = r.usages||[];
+    const others = r.usages.filter(x=>x.id!==ctx.usageId);
+    const avail = Number(r.initialLength||0) - others.reduce((s,x)=>s+Number(x.meters||0),0);
+    if (meters > avail + 1e-6) abort(`Only ${num(avail)} m are available on this roll.`);
+    if (!inAt && others.some(x=>!x.inAt)) abort('Another withdrawal on this roll is still open (roll not returned). Close it first.');
+    r.history = r.history||[];
+    if (ctx.usageId) {
+      const ix = r.usages.findIndex(x=>x.id===ctx.usageId);
+      if (ix<0) abort('This withdrawal no longer exists.');
+      r.usages[ix] = { ...r.usages[ix], ...body, editedAt:at, editedBy:by };
+      r.history.push({at,by,action:`Edited withdrawal of ${num(meters)} m (${body.projectName})`});
+    } else {
+      r.usages.push({ id:uid(), ...body, at, by });
+      r.history.push({at,by,action:`Withdrew ${num(meters)} m for ${body.projectName}${parts.length?' — '+partsText(parts):''}${inAt?'':' · roll out of cold storage'}`});
+    }
+    return r;
+  });
+  if (ok) { closeModal(); toast('Withdrawal saved ✓'); render(); }
+  else if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = 'Save'; }
+}
+async function quickReturn(rollId){
+  const at = nowISO();
+  let dur = 0;
+  const ok = await mutate('rolls', rollId, `Return ${serialStr(state.data.rolls[rollId].serial)} to cold storage`, r=>{
+    const u = (r.usages||[]).find(x=>!x.inAt); if (!u) abort('This roll is already back in cold storage.');
+    u.inAt = at; dur = new Date(at)-new Date(u.outAt);
+    (r.history=r.history||[]).push({at, by:state.currentUser.login, action:'Returned to cold storage after '+fmtDur(dur)});
+    return r;
+  });
+  if (ok) { toast(`${serialStr(state.data.rolls[rollId].serial)} back in cold storage ✓`); render(); }
+}
+async function addNote(rollId){
+  const t = document.getElementById('note-text'); const text = t?.value.trim(); if (!text) { toast('Write the note first.','error'); return; }
+  const at = nowISO(), by = state.currentUser.login;
+  const ok = await mutate('rolls', rollId, `Add note to ${serialStr(state.data.rolls[rollId].serial)}`, r=>{ (r.notes=r.notes||[]).push({ id:uid(), text, at, by }); return r; });
+  if (ok) { t.value=''; toast('Note added ✓'); render(); }
+}
+function deleteNote(rollId, noteId){
+  if (!isAdmin()) return;
+  confirmBox('Delete note', 'This note will be permanently removed from the roll.', async ()=>{
+    const ok = await mutate('rolls', rollId, `Delete note on ${serialStr(state.data.rolls[rollId].serial)}`, r=>{ r.notes = (r.notes||[]).filter(n=>n.id!==noteId); (r.history=r.history||[]).push({at:nowISO(), by:state.currentUser.login, action:'Deleted a note'}); return r; });
+    if (ok) { toast('Note deleted'); render(); }
+  });
+}
+function deleteUsage(rollId, usageId){
+  if (!isAdmin()) return;
+  const u = (state.data.rolls[rollId].usages||[]).find(x=>x.id===usageId);
+  confirmBox('Delete withdrawal', `The withdrawal of <strong>${num(u.meters)} m</strong> for ${esc(u.projectName||'')} on ${fmtDT(u.outAt)} will be removed. The meters return to the roll's remaining length.`, async ()=>{
+    const ok = await mutate('rolls', rollId, `Delete withdrawal on ${serialStr(state.data.rolls[rollId].serial)}`, r=>{ r.usages = (r.usages||[]).filter(x=>x.id!==usageId); (r.history=r.history||[]).push({at:nowISO(), by:state.currentUser.login, action:`Deleted withdrawal of ${num(u.meters)} m (${u.projectName||''})`}); return r; });
+    if (ok) { toast('Withdrawal deleted'); render(); }
+  });
+}
+async function toggleArchive(rollId){
+  let archived;
+  const ok = await mutate('rolls', rollId, `Archive/restore ${serialStr(state.data.rolls[rollId].serial)}`, r=>{
+    if (!r.archived && (r.usages||[]).some(u=>!u.inAt)) abort('Return the roll to cold storage before archiving it.');
+    r.archived = !r.archived; archived = r.archived;
+    (r.history=r.history||[]).push({at:nowISO(), by:state.currentUser.login, action: r.archived?'Archived roll':'Restored roll from archive'});
+    return r;
+  });
+  if (ok) { toast(archived?'Roll archived':'Roll restored'); render(); }
+}
+function deleteRoll(rollId){
+  if (!isAdmin()) return;
+  const r = state.data.rolls[rollId];
+  confirmBox('Delete roll', `Roll <strong>${esc(serialStr(r.serial))}</strong> and all its withdrawals, notes and history will be permanently erased. Its serial number will not be reused. To keep the record, use Archive instead.`, async ()=>{
+    if (await deleteDoc('rolls', rollId, `Delete roll ${serialStr(r.serial)}`)) { toast('Roll deleted'); nav('rolls'); }
+  }, 'Delete permanently');
+}
+
+// ============================================================
+// PROJECTS & PARTS
+// ============================================================
+function projectUse(pid){
+  let m=0,n=0; rolls().forEach(r=>(r.usages||[]).forEach(u=>{ if(u.projectId===pid){m+=Number(u.meters||0);n++;} })); return {m,n};
+}
+function partUse(pid, partId){
+  let q=0; rolls().forEach(r=>(r.usages||[]).forEach(u=>{ if(u.projectId===pid)(u.parts||[]).forEach(p=>{ if(p.partId===partId) q+=p.qty; }); })); return q;
+}
+function renderProjects(){
+  const admin = isAdmin();
+  const div = document.createElement('div');
+  div.innerHTML = `
+    <div class="page-header"><h2>Projects &amp; Parts</h2><p>Projects and parts listed here are the options offered when withdrawing material from a roll</p></div>
+    <div class="card" style="margin-bottom:24px">
+      <div class="section-title">Add project</div>
+      <div class="inline-form" style="margin-top:0">
+        <div class="form-group" style="margin:0"><label>Project code</label><input type="text" class="draft" id="np-code" placeholder="e.g. P-2026-014"></div>
+        <div class="form-group" style="margin:0"><label class="req">Project name</label><input type="text" class="draft" id="np-name" placeholder="e.g. PELICAN wing set"></div>
+        <button class="btn btn-primary" onclick="addProject()">${svgIcon('plus')} Add project</button>
+      </div>
+    </div>
+    ${projects().length ? projects().map(p=>{ const use=projectUse(p.id); return `
+    <div class="card proj-card">
+      <div class="proj-head">
+        ${p.code?`<span class="pcode">${esc(p.code)}</span>`:''}<span class="pname">${esc(p.name)}</span>
+        <span class="badge badge-gray">${(p.parts||[]).length} parts</span>
+        <span class="dim" style="font-size:10px">${num(use.m)} m used in ${use.n} withdrawal(s)</span>
+        <span style="margin-left:auto" class="btn-group">
+          <button class="btn btn-outline btn-sm" onclick="editProject('${p.id}')">${svgIcon('edit')} Rename</button>
+          ${admin?`<button class="btn btn-danger btn-sm" onclick="deleteProject('${p.id}')">${svgIcon('trash')}</button>`:''}
+        </span>
+      </div>
+      ${(p.parts||[]).length?`<div class="table-wrap"><table><thead><tr><th>Part number</th><th>Part description</th><th style="text-align:right">Qty made</th><th></th></tr></thead><tbody>
+        ${p.parts.map(pp=>`<tr><td class="muted">${esc(pp.pn||'—')}</td><td>${esc(pp.name)}</td><td style="text-align:right;font-weight:600">${partUse(p.id,pp.id)}</td>
+        <td style="text-align:right;white-space:nowrap"><button class="btn btn-outline btn-sm" onclick="editPart('${p.id}','${pp.id}')">${svgIcon('edit')}</button>${admin?` <button class="btn btn-danger btn-sm" onclick="deletePart('${p.id}','${pp.id}')">${svgIcon('trash')}</button>`:''}</td></tr>`).join('')}
+      </tbody></table></div>`:`<div class="dim" style="font-size:11px">No parts yet.</div>`}
+      <div class="inline-form">
+        <div class="form-group" style="margin:0"><label>Part number</label><input type="text" class="draft" id="pp-pn-${p.id}" placeholder="e.g. PLC-WG-001"></div>
+        <div class="form-group" style="margin:0"><label>Part description</label><input type="text" class="draft" id="pp-name-${p.id}" placeholder="e.g. Wing upper skin" onkeydown="if(event.key==='Enter')addPart('${p.id}')"></div>
+        <button class="btn btn-blue btn-sm" onclick="addPart('${p.id}')">${svgIcon('plus')} Add part</button>
+      </div>
+    </div>`;}).join('') : `<div class="card"><div class="empty">No projects yet.</div></div>`}`;
+  return div;
+}
+async function addProject(){
+  const code = document.getElementById('np-code').value.trim(), name = document.getElementById('np-name').value.trim();
+  if (!name) { toast('Enter the project name.','error'); return; }
+  const id = 'prj-'+uid();
+  const c = await commit(`Add project ${code?code+' ':''}${name}`, d=>{
+    if (Object.values(d.projects).some(p=>p.name.toLowerCase()===name.toLowerCase() && (p.code||'')===code)) abort('That project already exists.');
+    d.projects[id] = { code, name, parts:[], createdAt:nowISO(), createdBy:state.currentUser.login };
+  });
+  if (c.ok) { document.getElementById('np-code').value=''; document.getElementById('np-name').value=''; toast('Project added ✓'); render(); }
+}
+async function addPart(pid){
+  const pnEl = document.getElementById('pp-pn-'+pid), nmEl = document.getElementById('pp-name-'+pid);
+  const pn = pnEl.value.trim(), name = nmEl.value.trim() || pn;
+  if (!name) { toast('Enter a part number or description.','error'); return; }
+  const ok = await mutate('projects', pid, `Add part ${pn||name} to ${state.data.projects[pid].name}`, p=>{ (p.parts=p.parts||[]).push({ id:'pt-'+uid(), pn, name }); return p; });
+  if (ok) { pnEl.value=''; nmEl.value=''; toast('Part added ✓'); render(); setTimeout(()=>document.getElementById('pp-pn-'+pid)?.focus(),30); }
+}
+function editProject(pid){
+  const p = state.data.projects[pid];
+  openModal(`<h3>Edit project</h3>
+    <div class="form-group"><label>Project code</label><input type="text" id="ep-code" value="${esc(p.code||'')}"></div>
+    <div class="form-group"><label class="req">Project name</label><input type="text" id="ep-name" value="${esc(p.name)}"></div>
+    <div class="modal-desc">Past withdrawals keep the project name they were recorded with.</div>
+    <div class="modal-actions"><button class="btn btn-outline" onclick="closeModal()">Cancel</button><button class="btn btn-primary" onclick="saveProjectEdit('${pid}')">Save</button></div>`);
+}
+async function saveProjectEdit(pid){
+  const name = document.getElementById('ep-name').value.trim(); if (!name) return;
+  const code = document.getElementById('ep-code').value.trim();
+  closeModal();
+  if (await mutate('projects', pid, `Rename project ${name}`, p=>{ p.code=code; p.name=name; return p; })) { toast('Project updated ✓'); render(); }
+}
+function editPart(pid, partId){
+  const pp = (state.data.projects[pid].parts||[]).find(x=>x.id===partId);
+  openModal(`<h3>Edit part</h3>
+    <div class="form-group"><label>Part number</label><input type="text" id="ept-pn" value="${esc(pp.pn||'')}"></div>
+    <div class="form-group"><label class="req">Part description</label><input type="text" id="ept-name" value="${esc(pp.name)}"></div>
+    <div class="modal-actions"><button class="btn btn-outline" onclick="closeModal()">Cancel</button><button class="btn btn-primary" onclick="savePartEdit('${pid}','${partId}')">Save</button></div>`);
+}
+async function savePartEdit(pid, partId){
+  const name = document.getElementById('ept-name').value.trim(); if (!name) return;
+  const pn = document.getElementById('ept-pn').value.trim();
+  closeModal();
+  if (await mutate('projects', pid, `Edit part ${pn||name}`, p=>{ const pp = (p.parts||[]).find(x=>x.id===partId); if (!pp) abort('This part no longer exists.'); pp.pn=pn; pp.name=name; return p; })) { toast('Part updated ✓'); render(); }
+}
+function deleteProject(pid){
+  if (!isAdmin()) return; const p = state.data.projects[pid]; const use = projectUse(pid);
+  confirmBox('Delete project', `Project <strong>${esc(p.name)}</strong> and its parts list will be removed from the selection lists.${use.n?` The ${use.n} withdrawal(s) already recorded for it are kept on their rolls.`:''}`, async ()=>{ if (await deleteDoc('projects', pid, `Delete project ${p.name}`)) { toast('Project deleted'); render(); } });
+}
+function deletePart(pid, partId){
+  if (!isAdmin()) return; const pp = (state.data.projects[pid].parts||[]).find(x=>x.id===partId);
+  confirmBox('Delete part', `Part <strong>${esc(pp.name)}</strong> will be removed from this project’s list. Withdrawals already recorded keep it.`, async ()=>{
+    if (await mutate('projects', pid, `Delete part ${pp.pn||pp.name}`, p=>{ p.parts = (p.parts||[]).filter(x=>x.id!==partId); return p; })) { toast('Part deleted'); render(); }
+  });
+}
+// ============================================================
+// CONSUMPTION / ANALYSIS
+// ============================================================
+function allUsages(){
+  const out = [];
+  rolls().forEach(r=>(r.usages||[]).forEach(u=>out.push({ r, u, area: Number(u.meters||0)*Number(r.width||0)/1000 })));
+  return out.sort((a,b)=>new Date(b.u.outAt)-new Date(a.u.outAt));
+}
+function filteredUsages(){
+  const f = state.an;
+  return allUsages().filter(({r,u})=>{
+    if (f.project && u.projectId!==f.project) return false;
+    if (f.material && r.material!==f.material) return false;
+    const d = toDateInput(u.outAt);
+    if (f.from && d < f.from) return false;
+    if (f.to && d > f.to) return false;
+    return true;
+  });
+}
+function renderConsumption(){
+  const div = document.createElement('div');
+  const mats = [...new Set(rolls().map(r=>r.material).filter(Boolean))].sort();
+  div.innerHTML = `
+    <div class="page-header" style="display:flex;justify-content:space-between;align-items:flex-end;gap:12px;flex-wrap:wrap">
+      <div><h2>Material Consumption</h2><p>Withdrawals across all rolls by project, material, part and month</p></div>
+      <button class="btn btn-outline" onclick="exportCSV()">${svgIcon('download')} Export CSV</button>
+    </div>
+    <div class="toolbar">
+      <div class="form-group"><label>Project</label><select class="flt" id="an-p"><option value="">All projects</option>${projects().map(p=>`<option value="${p.id}" ${state.an.project===p.id?'selected':''}>${esc((p.code?p.code+' — ':'')+p.name)}</option>`).join('')}</select></div>
+      <div class="form-group"><label>Material</label><select class="flt" id="an-m"><option value="">All materials</option>${mats.map(m=>`<option ${state.an.material===m?'selected':''}>${esc(m)}</option>`).join('')}</select></div>
+      <div class="form-group"><label>From</label><input type="date" class="flt" id="an-from" value="${state.an.from}"></div>
+      <div class="form-group"><label>To</label><input type="date" class="flt" id="an-to" value="${state.an.to}"></div>
+      <button class="btn btn-outline btn-sm" style="margin-bottom:2px" onclick="state.an={project:'',material:'',from:'',to:''};render()">Clear</button>
+    </div>
+    <div id="an-body"></div>`;
+  setTimeout(()=>{
+    [['an-p','project'],['an-m','material'],['an-from','from'],['an-to','to']].forEach(([id,k])=>document.getElementById(id)?.addEventListener('change', e=>{ state.an[k]=e.target.value; fillConsumption(); }));
+    fillConsumption();
+  },0);
+  return div;
+}
+function fillConsumption(){
+  const el = document.getElementById('an-body'); if (!el) return;
+  const list = filteredUsages();
+  const tm = list.reduce((s,x)=>s+Number(x.u.meters||0),0), ta = list.reduce((s,x)=>s+x.area,0);
+  const outH = list.reduce((s,x)=>s+Math.max(0,((x.u.inAt?new Date(x.u.inAt):new Date())-new Date(x.u.outAt))),0);
+  const group = (keyFn) => { const m = {}; list.forEach(x=>{ const k=keyFn(x); if(!m[k]) m[k]={m:0,a:0,n:0}; m[k].m+=Number(x.u.meters||0); m[k].a+=x.area; m[k].n++; }); return Object.entries(m); };
+  const byProj = group(x=>x.u.projectName||'—').sort((a,b)=>b[1].m-a[1].m);
+  const byMat = group(x=>x.r.material||'—').sort((a,b)=>b[1].m-a[1].m);
+  const byMonth = group(x=>toDateInput(x.u.outAt).slice(0,7)).sort((a,b)=>b[0].localeCompare(a[0]));
+  const parts = {}; list.forEach(x=>(x.u.parts||[]).forEach(p=>{ const k=(x.u.projectName||'')+'|'+(p.pn||'')+'|'+p.name; if(!parts[k]) parts[k]={proj:x.u.projectName,pn:p.pn,name:p.name,q:0,n:0}; parts[k].q+=p.qty; parts[k].n++; }));
+  const partRows = Object.values(parts).sort((a,b)=>b.q-a.q);
+  const tbl = (head, rows) => `<div class="table-wrap"><table><thead><tr>${head.map((h,i)=>`<th ${i?'style="text-align:right"':''}>${h}</th>`).join('')}</tr></thead><tbody>${rows}</tbody></table></div>`;
+  const pct = v => tm>0? num(v/tm*100,1)+'%' : '—';
+  if (!list.length) { el.innerHTML = `<div class="card"><div class="empty">No withdrawals match these filters.</div></div>`; return; }
+  el.innerHTML = `
+    <div class="stats-row">
+      <div class="stat-card"><div class="label">Linear meters</div><div class="value" style="color:var(--cyan)">${num(tm,1)}</div></div>
+      <div class="stat-card"><div class="label">Area</div><div class="value">${num(ta,1)}<span style="font-size:13px;color:var(--text2)"> m²</span></div></div>
+      <div class="stat-card"><div class="label">Withdrawals</div><div class="value">${list.length}</div></div>
+      <div class="stat-card"><div class="label">Time out of storage</div><div class="value" style="font-size:22px">${fmtDur(outH)}</div></div>
+    </div>
+    <div class="grid2" style="align-items:start;margin-bottom:20px">
+      <div class="card"><div class="section-title">By project</div>${tbl(['Project','Withdrawals','m','m²','Share'], byProj.map(([k,v])=>`<tr><td><strong>${esc(k)}</strong></td><td style="text-align:right">${v.n}</td><td style="text-align:right;color:var(--cyan);font-weight:700">${num(v.m)}</td><td style="text-align:right">${num(v.a)}</td><td style="text-align:right" class="muted">${pct(v.m)}</td></tr>`).join(''))}</div>
+      <div class="card"><div class="section-title">By material</div>${tbl(['Material','Withdrawals','m','m²','Share'], byMat.map(([k,v])=>`<tr><td><strong>${esc(k)}</strong></td><td style="text-align:right">${v.n}</td><td style="text-align:right;color:var(--cyan);font-weight:700">${num(v.m)}</td><td style="text-align:right">${num(v.a)}</td><td style="text-align:right" class="muted">${pct(v.m)}</td></tr>`).join(''))}</div>
+    </div>
+    <div class="grid2" style="align-items:start;margin-bottom:20px">
+      <div class="card"><div class="section-title">Parts produced</div>${partRows.length?tbl(['Part','Project','Qty','Withdrawals'], partRows.map(p=>`<tr><td><strong>${esc(p.name)}</strong>${p.pn?` <span class="dim">${esc(p.pn)}</span>`:''}</td><td style="text-align:right" class="muted">${esc(p.proj||'')}</td><td style="text-align:right;color:var(--cyan);font-weight:700">${p.q}</td><td style="text-align:right">${p.n}</td></tr>`).join('')):'<div class="empty">No parts recorded.</div>'}</div>
+      <div class="card"><div class="section-title">By month</div>${tbl(['Month','Withdrawals','m','m²'], byMonth.map(([k,v])=>{ const [y,mo]=k.split('-'); return `<tr><td><strong>${new Date(y,mo-1,1).toLocaleString('en-GB',{month:'long',year:'numeric'})}</strong></td><td style="text-align:right">${v.n}</td><td style="text-align:right;color:var(--cyan);font-weight:700">${num(v.m)}</td><td style="text-align:right">${num(v.a)}</td></tr>`; }).join(''))}</div>
+    </div>
+    <div class="card"><div class="section-title">All withdrawals (${list.length})</div>${tbl(['Removed','Roll','Material','Project','Parts','m','Time out','By'], list.map(({r,u})=>`<tr class="clickrow" onclick="openRoll('${r.id}')"><td style="white-space:nowrap">${fmtDT(u.outAt)}</td><td style="text-align:right" class="serial">${esc(serialStr(r.serial))}</td><td style="text-align:right">${esc(r.material||'')}</td><td style="text-align:right">${esc(u.projectName||'')}</td><td style="text-align:right" class="muted">${esc(partsText(u.parts)||'—')}</td><td style="text-align:right;font-weight:700;color:var(--cyan)">${num(u.meters)}</td><td style="text-align:right;${u.inAt?'':'color:var(--amber)'}">${fmtDur(Math.max(0,(u.inAt?new Date(u.inAt):new Date())-new Date(u.outAt)))}</td><td style="text-align:right">${esc(userName(u.by))}</td></tr>`).join(''))}</div>`;
+}
+function downloadBlob(blob, filename){
+  const url = URL.createObjectURL(blob); const a = document.createElement('a');
+  a.href = url; a.download = filename; document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(()=>URL.revokeObjectURL(url), 2000);
+}
+function exportCSV(){
+  const q = v => '"' + String(v??'').replace(/"/g,'""') + '"';
+  const rows = [['Roll serial','Material','Supplier','Supplier S/N','Width (mm)','Project','Parts','Linear meters','Area (m2)','Removed from cold storage','Returned to cold storage','Time out (h)','Recorded by','Remark']];
+  filteredUsages().forEach(({r,u,area})=>rows.push([serialStr(r.serial),r.material,r.supplier,r.supplierSN,r.width,u.projectName,partsText(u.parts),u.meters,area.toFixed(3),u.outAt,u.inAt||'',(((u.inAt?new Date(u.inAt):new Date())-new Date(u.outAt))/3.6e6).toFixed(2),u.by,u.remark||'']));
+  const csv = '\ufeff' + rows.map(r=>r.map(q).join(';')).join('\r\n');
+  downloadBlob(new Blob([csv],{type:'text/csv'}), `roll-consumption-${toDateInput(nowISO())}.csv`);
+}
+// ============================================================
+// USERS (admin)
+// ============================================================
+function renderUsers(){
+  const div = document.createElement('div');
+  div.innerHTML = `<div class="page-header"><h2>User Management</h2><p>Create accounts and manage access — only administrators can erase information</p></div>
+    <div class="card" style="margin-bottom:24px">
+      <div class="section-title">Add new user</div>
+      <div class="grid3" style="margin-bottom:14px">
+        <div class="form-group" style="margin:0"><label class="req">Full name</label><input class="draft" id="nu-name" type="text" placeholder="Full name"></div>
+        <div class="form-group" style="margin:0"><label class="req">Login</label><input class="draft" id="nu-login" type="text" placeholder="username"></div>
+        <div class="form-group" style="margin:0"><label class="req">Password</label><input class="draft" id="nu-pass" type="password" placeholder="password"></div>
+        <div class="form-group" style="margin:0"><label>Role</label><select id="nu-role"><option value="user">User</option><option value="admin">Administrator</option></select></div>
+      </div>
+      <button class="btn btn-primary btn-sm" onclick="addUser()">${svgIcon('plus')} Add user</button>
+    </div>
+    <div class="card">${users().map(u=>{ const ini=u.name.split(' ').map(w=>w[0]).join('').slice(0,2).toUpperCase(); return `
+      <div class="user-row">
+        <div class="user-avatar" style="background:${u.role==='admin'?'var(--blue-dim)':'var(--cyan-dim)'};color:${u.role==='admin'?'var(--blue)':'var(--cyan)'}">${esc(ini)}</div>
+        <div class="user-info"><div class="uname">${esc(u.name)} ${u.role==='admin'?'<span class="badge badge-blue" style="margin-left:4px">Admin</span>':''}</div><div class="uemail">@${esc(u.login)}${u.createdAt?' · since '+fmtDate(u.createdAt):''}</div></div>
+        <div class="btn-group"><button class="btn btn-outline btn-sm" onclick="editUser('${u.id}')">${svgIcon('edit')} Edit</button>
+        ${u.id!=='admin' && u.id!==state.currentUser.id?`<button class="btn btn-danger btn-sm" onclick="removeUser('${u.id}')">Remove</button>`:''}</div>
+      </div>`;}).join('')}</div>`;
+  return div;
+}
+async function addUser(){
+  const g = id => document.getElementById(id)?.value?.trim()||'';
+  const name=g('nu-name'), login=g('nu-login'), pass=document.getElementById('nu-pass').value, role=g('nu-role');
+  if (!name||!login||!pass) { toast('Name, login and password are required.','error'); return; }
+  const id = 'u-'+uid();
+  const c = await commit(`Add user ${login}`, d=>{
+    if (Object.values(d.users).some(u=>u.login.toLowerCase()===login.toLowerCase())) abort('Login already exists.');
+    d.users[id] = { login, pass, name, role, createdAt:nowISO() };
+  });
+  if (c.ok) { ['nu-name','nu-login','nu-pass'].forEach(i=>document.getElementById(i).value=''); toast(`User ${name} added ✓`); render(); }
+}
+function editUser(id){
+  const u = state.data.users[id];
+  openModal(`<h3>Edit user</h3>
+    <div class="form-group"><label>Full name</label><input type="text" id="eu-name" value="${esc(u.name)}"></div>
+    <div class="form-group"><label>Login</label><input type="text" id="eu-login" value="${esc(u.login)}" ${id==='admin'?'disabled':''}></div>
+    <div class="form-group"><label>New password <span class="dim" style="text-transform:none;letter-spacing:0;font-weight:400">— leave empty to keep</span></label><input type="password" id="eu-pass"></div>
+    <div class="form-group"><label>Role</label><select id="eu-role" ${id==='admin'||id===state.currentUser.id?'disabled':''}><option value="user" ${u.role==='user'?'selected':''}>User</option><option value="admin" ${u.role==='admin'?'selected':''}>Administrator</option></select></div>
+    <div class="modal-actions"><button class="btn btn-outline" onclick="closeModal()">Cancel</button><button class="btn btn-primary" onclick="saveUserEdit('${id}')">Save</button></div>`);
+}
+async function saveUserEdit(id){
+  const name = document.getElementById('eu-name').value.trim(), login = document.getElementById('eu-login').value.trim(), pass = document.getElementById('eu-pass').value;
+  const role = document.getElementById('eu-role').value;
+  if (!name || !login) { toast('Name and login are required.','error'); return; }
+  closeModal();
+  const ok = await commit(`Edit user ${login}`, d=>{
+    const u = d.users[id]; if (!u) abort('This user no longer exists.');
+    if (Object.entries(d.users).some(([k,x])=>k!==id && x.login.toLowerCase()===login.toLowerCase())) abort('Login already exists.');
+    u.name=name; if (id!=='admin') u.login=login; if (pass) u.pass=pass;
+    if (id!=='admin' && id!==state.currentUser.id) u.role=role;
+  });
+  if (ok.ok) { toast('User updated ✓'); render(); }
+}
+function removeUser(id){
+  const u = state.data.users[id];
+  confirmBox('Remove user', `<strong>${esc(u.name)}</strong> (@${esc(u.login)}) will no longer be able to sign in. Records they created are kept.`, async ()=>{ if (await deleteDoc('users', id, `Remove user ${u.login}`)) { toast('User removed'); render(); } }, 'Remove');
+}
+// ============================================================
+// CHANGE PASSWORD
+// ============================================================
+function renderChangePassword(){
+  const u = state.currentUser;
+  const div = document.createElement('div');
+  div.innerHTML = `<div class="page-header"><h2>Change Password</h2><p>Update your login password. You will need to use the new password on your next login.</p></div>
+    <div class="card" style="max-width:420px">
+      <div style="margin-bottom:20px;display:flex;align-items:center;gap:12px">
+        <div style="width:40px;height:40px;border-radius:var(--radius);background:var(--cyan-dim);border:1px solid var(--cyan-border);display:flex;align-items:center;justify-content:center;font-size:18px">🔒</div>
+        <div><div style="font-size:13px;font-weight:700;color:var(--text);text-transform:uppercase;letter-spacing:0.04em">${esc(u.name)}</div><div style="font-size:10px;color:var(--text3);margin-top:2px">@${esc(u.login)}</div></div>
+      </div>
+      <div class="form-group"><label>Current password</label><input type="password" id="cp-current" autocomplete="current-password"></div>
+      <div class="form-group"><label>New password</label><input type="password" id="cp-new" autocomplete="new-password"></div>
+      <div class="form-group"><label>Confirm new password</label><input type="password" id="cp-confirm" autocomplete="new-password"></div>
+      <div id="cp-msg"></div>
+      <button class="btn btn-primary" onclick="changePassword()">Update password</button>
+    </div>`;
+  return div;
+}
+async function changePassword(){
+  const u = state.currentUser, msg = document.getElementById('cp-msg');
+  const c = document.getElementById('cp-current').value, n = document.getElementById('cp-new').value, k = document.getElementById('cp-confirm').value;
+  if (!c||!n||!k) return msg.innerHTML='<div class="alert alert-error">All fields are required.</div>';
+  if (c !== u.pass) return msg.innerHTML='<div class="alert alert-error">Current password is incorrect.</div>';
+  if (n !== k) return msg.innerHTML='<div class="alert alert-error">New passwords do not match.</div>';
+  if (n.length < 4) return msg.innerHTML='<div class="alert alert-error">Use at least 4 characters.</div>';
+  if (await mutate('users', u.id, `Change password for ${u.login}`, x=>{ x.pass=n; return x; })) { state.currentUser = state.data.users[u.id]; toast('Password updated ✓'); nav('dashboard'); }
+}
+// ============================================================
+// GITHUB STORAGE (admin)
+// ============================================================
+function renderStorage(){
+  const div = document.createElement('div');
+  const tok = getToken();
+  const size = state.store ? new Blob([JSON.stringify(state.store)]).size : 0;
+  div.innerHTML = `
+    <div class="page-header"><h2>GitHub Storage</h2><p>All Roll Tracker data is kept in one file in a private GitHub repository. Every save is a commit, so the full change history can be reviewed and restored in GitHub.</p></div>
+    <div class="grid2" style="align-items:start">
+      <div class="card">
+        <div class="section-title">Connection</div>
+        <div class="po-grid" style="grid-template-columns:1fr;margin-bottom:16px">
+          <div class="po-field"><div class="key">Repository</div><div class="val">${esc(GH_OWNER)}/${esc(GH_REPO)} · branch ${esc(GH_BRANCH)}</div></div>
+          <div class="po-field"><div class="key">Data file</div><div class="val">${esc(GH_FILE)} · ${num(size/1024,1)} kB</div></div>
+          <div class="po-field"><div class="key">Last synced</div><div class="val">${fmtDT(state.lastSync)}${state.sha?` <span class="dim">· ${esc(state.sha.slice(0,7))}</span>`:''}</div></div>
+          <div class="po-field"><div class="key">Status</div><div class="val" style="color:${state.ghError?'var(--amber)':'var(--green)'}">${esc(state.ghError||'Connected')}</div></div>
+          <div class="po-field"><div class="key">Token on this computer</div><div class="val">${tok?esc(tok.slice(0,11))+'…'+esc(tok.slice(-4)):'—'}</div></div>
+        </div>
+        <div class="btn-group">
+          <button class="btn btn-outline btn-sm" onclick="testConnection()">${svgIcon('check')} Test connection</button>
+          <button class="btn btn-outline btn-sm" onclick="downloadBackup()">${svgIcon('download')} Download backup (JSON)</button>
+          <a class="btn btn-outline btn-sm" href="https://github.com/${GH_OWNER}/${GH_REPO}/commits/${GH_BRANCH}/${GH_FILE}" target="_blank" rel="noopener">View history on GitHub ↗</a>
+        </div>
+      </div>
+      <div class="card">
+        <div class="section-title">Replace access token</div>
+        <p class="muted" style="font-size:11px;margin-bottom:14px;line-height:1.7">Use this when the token expires or is renewed. The token is stored only in this browser; each computer enters it once at login.</p>
+        <div class="form-group"><label>New GitHub access token</label><input type="password" id="st-token" placeholder="github_pat_xxxxxxxx" autocomplete="off"></div>
+        <div id="st-msg"></div>
+        <button class="btn btn-primary btn-sm" onclick="replaceToken()">Save &amp; test</button>
+      </div>
+    </div>`;
+  return div;
+}
+async function testConnection(){
+  const r = await pull();
+  if (r.ok) { toast('GitHub connection OK ✓'); render(); } else { toast(r.error,'error',7000); render(); }
+}
+async function replaceToken(){
+  const el = document.getElementById('st-token'); const t = el.value.trim(); const msg = document.getElementById('st-msg');
+  if (!t) { msg.innerHTML = '<div class="alert alert-error">Paste the new token first.</div>'; return; }
+  const old = getToken(); setToken(t);
+  const r = await pull();
+  if (!r.ok) { setToken(old); msg.innerHTML = `<div class="alert alert-error">${esc(r.error)} The previous token was kept.</div>`; state.ghError = null; return; }
+  el.value=''; toast('Token saved and tested ✓'); render();
+}
+function downloadBackup(){
+  if (!state.store) return;
+  downloadBlob(new Blob([JSON.stringify(state.store, null, 1)], {type:'application/json'}), `roll_data-backup-${toDateInput(nowISO())}.json`);
+}
+
+// ============================================================
+// SVG ICONS
+// ============================================================
+function svgIcon(name){
+  const paths = {
+    grid:'<rect x="1" y="1" width="6" height="6" rx="1"/><rect x="9" y="1" width="6" height="6" rx="1"/><rect x="1" y="9" width="6" height="6" rx="1"/><rect x="9" y="9" width="6" height="6" rx="1"/>',
+    roll:'<ellipse cx="4.5" cy="8" rx="2.5" ry="5.5"/><path d="M4.5 2.5h7c1.4 0 2.5 2.5 2.5 5.5s-1.1 5.5-2.5 5.5h-7"/><ellipse cx="4.5" cy="8" rx="0.8" ry="1.8"/>',
+    plus:'<path d="M8 3v10M3 8h10"/>',
+    folder:'<path d="M2 4a1 1 0 011-1h3l1.5 1.5H13a1 1 0 011 1V12a1 1 0 01-1 1H3a1 1 0 01-1-1V4z"/>',
+    chart:'<path d="M2 12l4-4 3 3 5-7"/><path d="M2 14h12"/>',
+    users:'<circle cx="8" cy="5" r="3"/><path d="M2 14a6 6 0 0112 0"/>',
+    key:'<circle cx="5" cy="10" r="3"/><path d="M7.2 7.8L13 2M11 4l2 2M9.5 5.5l1.5 1.5"/>',
+    logout:'<path d="M6 3H3a1 1 0 00-1 1v8a1 1 0 001 1h3M11 10l3-2-3-2M14 8H7"/>',
+    check:'<path d="M2 8l4 4 8-8"/>',
+    edit:'<path d="M11 2.5l2.5 2.5L6 12.5H3.5V10L11 2.5z"/>',
+    trash:'<path d="M3 4h10M6 4V2.5h4V4M4.5 4l.7 9.5h5.6l.7-9.5"/>',
+    archive:'<path d="M2 4a1 1 0 011-1h10a1 1 0 011 1v1a1 1 0 01-1 1H3a1 1 0 01-1-1V4z"/><path d="M3 6v7a1 1 0 001 1h8a1 1 0 001-1V6"/><path d="M6.5 9h3"/>',
+    snow:'<path d="M8 1.5v13M2.4 4.8l11.2 6.4M2.4 11.2l11.2-6.4M6 2.8l2 1.5 2-1.5M6 13.2l2-1.5 2 1.5"/>',
+    settings:'<circle cx="8" cy="8" r="2"/><path d="M8 2v2M8 12v2M2 8h2M12 8h2M3.5 3.5l1.5 1.5M11 11l1.5 1.5M3.5 12.5l1.5-1.5M11 5l1.5-1.5"/>',
+    download:'<path d="M2 10v3a1 1 0 001 1h10a1 1 0 001-1v-3M8 2v8M5 7l3 3 3-3"/>',
+  };
+  return `<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">${paths[name]||''}</svg>`;
+}
+
+// ============================================================
+// INIT
+// ============================================================
+async function startup(){
+  loadCache();
+  render();
+  if (!ghConfigured()) return;
+  const btn = document.getElementById('login-submit-btn');
+  if (btn) { btn.disabled = true; btn.textContent = '⟳ Syncing with GitHub…'; }
+  const r = await pull();
+  let sid = null; try { sid = localStorage.getItem(SESSION_KEY); } catch(e) {}
+  if (sid && (r.ok || (r.network && state.store)) && !r.notFound && state.data.users[sid]) {
+    state.loggedIn = true; state.currentUser = state.data.users[sid];
+    if (!r.ok) toast('GitHub is unreachable — showing this computer’s last synced data.','error',8000);
+  }
+  render();
+}
+startup();
+</script>
+</body>
+</html>
