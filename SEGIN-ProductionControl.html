@@ -646,15 +646,22 @@
       <span class="extract-note" id="helperStatus">Start segin_helper.py on this computer, then connect.</span>
     </div>
     <div class="extract-row">
-      <div class="extract-field"><label for="extractFrom">Day to extract</label><input type="date" id="extractFrom"></div>
+      <div class="extract-field"><label for="extractFrom">From day</label><input type="date" id="extractFrom"></div>
+      <div class="extract-field"><label for="extractTo">To day (inclusive)</label><input type="date" id="extractTo"></div>
       <div class="extract-field wide"><label for="extractDir">Save files in folder</label><input id="extractDir" placeholder="e.g. C:\SEGIN\exports   (blank = the helper's default folder)"></div>
+    </div>
+    <div class="extract-row" style="gap:8px;">
+      <span class="extract-note">Quick pick:</span>
+      <button type="button" class="btn btn-sm" data-range="1">Yesterday</button>
+      <button type="button" class="btn btn-sm" data-range="7">Last 7 days</button>
+      <button type="button" class="btn btn-sm" data-range="30">Last 30 days</button>
     </div>
     <div class="extract-row">
       <button type="button" class="btn" id="extractRunBtn">Run extraction &amp; import</button>
       <button type="button" class="btn btn-sm" id="extractImportOnlyBtn" title="Skip the extraction and just import the files already sitting in the folder">Import files already in folder</button>
       <span class="extract-note" id="extractState"></span>
     </div>
-    <div class="extract-note" style="margin-top:10px;">Runs your export program for that one day, SEGIN and TimeTrack together (default: yesterday). The files it saves replace the previous ones in the folder.</div>
+    <div class="extract-note" style="margin-top:10px;">Runs your export program for those days (both ends included), SEGIN and TimeTrack together - default: yesterday. The two files it saves cover the whole range and replace the previous ones in the folder.</div>
     <pre id="extractLog"></pre>
   </div>
 </div>
@@ -2098,6 +2105,7 @@
   const helperConnectBtn = document.getElementById('helperConnectBtn');
   const helperStatusEl = document.getElementById('helperStatus');
   const extractFromEl = document.getElementById('extractFrom');
+  const extractToEl = document.getElementById('extractTo');
   const extractDirEl = document.getElementById('extractDir');
   const extractRunBtn = document.getElementById('extractRunBtn');
   const extractImportOnlyBtn = document.getElementById('extractImportOnlyBtn');
@@ -2115,11 +2123,14 @@
   helperUrlEl.value = store.get('pft_helperUrl') || helperUrlEl.value;
   helperTokenEl.value = store.get('pft_helperToken') || '';
   extractDirEl.value = store.get('pft_extractDir') || '';
-  (function(){ // default day: yesterday, like the export script itself
-    const d = new Date(); d.setDate(d.getDate() - 1);
-    const p2 = n => String(n).padStart(2, '0');
-    extractFromEl.value = d.getFullYear() + '-' + p2(d.getMonth() + 1) + '-' + p2(d.getDate());
-  })();
+  const extractIso = d => d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+  const extractDaysAgo = n => { const d = new Date(); d.setDate(d.getDate() - n); return extractIso(d); };
+  extractFromEl.max = extractToEl.max = extractIso(new Date());          // nothing in the future
+  extractFromEl.value = extractToEl.value = extractDaysAgo(1);            // default: yesterday, like the export script itself
+  document.querySelectorAll('[data-range]').forEach(btn => btn.addEventListener('click', () => {
+    extractFromEl.value = extractDaysAgo(+btn.dataset.range);             // N days back ... through yesterday
+    extractToEl.value = extractDaysAgo(1);
+  }));
 
   fileInput.addEventListener('change', () => forgetHelperSource('segin'));
   timetrackInput.addEventListener('change', () => forgetHelperSource('timetrack'));
@@ -2259,14 +2270,18 @@
       let produced = { segin: true, timetrack: true };
       let problem = '';
       let note = '';
+      let lastDay = '';
 
       if (!skipExtraction){
-        const day = extractFromEl.value;
-        if (!day) throw new Error('Pick the day to extract.');
-        setNote(extractStateEl, 'Running extraction — this can take a few minutes…');
+        const firstDay = extractFromEl.value;
+        lastDay = extractToEl.value || firstDay;
+        if (!firstDay) throw new Error('Pick the first day to extract.');
+        if (lastDay < firstDay) throw new Error("The 'to' day is before the 'from' day.");
+        const nDays = Math.round((new Date(lastDay) - new Date(firstDay)) / 86400000) + 1;
+        setNote(extractStateEl, 'Running extraction for ' + nDays + (nDays === 1 ? ' day' : ' days') + ' — this can take a few minutes…');
         const res = await helperFetch('/run', {
           method: 'POST', headers: {'Content-Type': 'application/json'},
-          body: JSON.stringify({ date: day, output_dir: dirInput })
+          body: JSON.stringify({ from_date: firstDay, to_date: lastDay, output_dir: dirInput })
         });
         const { job_id } = await res.json();
         let st;
@@ -2289,6 +2304,11 @@
       const dirs = {};
       which.forEach(s => { dirs[s] = outDir; });
       const imported = await importFromHelper(which, dirs, log, skipExtraction);
+      if (!skipExtraction){        // show the most recent day of what was just loaded
+        const days = [...daySelect.options].map(o => o.value);
+        const target = days.includes(lastDay) ? lastDay : days[days.length - 1];
+        if (target){ daySelect.value = target; renderDay(target); }
+      }
 
       const when = new Date().toLocaleTimeString('en-GB', {hour:'2-digit', minute:'2-digit'});
       if (problem || note){
